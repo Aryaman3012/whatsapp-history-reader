@@ -68,7 +68,7 @@
     border-bottom: 1px solid var(--border-soft);
   }
   .header-inner {
-    max-width: 1200px;
+    max-width: 900px;
     margin: 0 auto;
     padding: 14px 24px;
     display: flex;
@@ -89,55 +89,26 @@
     margin-top: 1px;
   }
   button.primary {
-    background: var(--brand);
-    color: var(--text);
-    border: none;
+    background: transparent;
+    color: var(--text-2);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 8px 16px;
+    padding: 7px 14px;
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
   }
-  button.primary:hover { background: var(--interactive); }
-
-  main {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 24px 80px;
-  }
-
-  /* ===== Range filter: pill buttons ===== */
-  #range-filter { margin: 28px 0 8px; }
-  #range-filter .segments {
-    display: inline-flex;
-    gap: 4px;
-  }
-  #range-filter button[data-range] {
-    background: var(--surface-1);
-    border: 1px solid var(--border-soft);
-    color: var(--muted);
-    font-size: 13px;
-    font-weight: 500;
-    padding: 6px 14px;
-    border-radius: 999px;
-    cursor: pointer;
-  }
-  #range-filter button[data-range]:hover {
-    background: var(--surface-hover);
-    color: var(--text-2);
-  }
-  #range-filter button[data-range].active {
-    background: var(--surface-3);
+  button.primary:hover {
+    background: var(--surface-2);
     border-color: var(--border);
     color: var(--text);
   }
-  #range-label {
-    margin-top: 12px;
-    font-size: 12px;
-    color: var(--text-4);
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
+
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
   }
 
   /* ===== Loading / error states ===== */
@@ -182,69 +153,185 @@
     margin: 0 0 10px;
   }
 
-  /* ===== Tier 1: metric tiles ===== */
-  .tile-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 16px;
-    margin-top: 24px;
+  /* ===== Narrative acts ===== */
+  .act {
+    padding: 64px 0;
+    border-bottom: 1px solid var(--border-soft);
   }
-  .tile {
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+  .act:last-child { border-bottom: none; }
+  .act h2 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: var(--text);
+    margin: 0 0 24px;
+    line-height: 1.3;
   }
-  .tile .tile-number {
+  .act .lede {
+    font-size: 15px;
+    color: var(--text-2);
+    line-height: 1.6;
+    margin: 0;
+    max-width: 640px;
+  }
+
+  /* ===== Act 1: the headline ===== */
+  #act-hero {
+    padding-top: 56px;
+    text-align: left;
+  }
+  .hero-number {
     font-family: var(--font-mono);
-    font-size: clamp(36px, 4vw, 48px);
+    font-size: clamp(48px, 8vw, 72px);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -2px;
+    font-variant-numeric: tabular-nums;
+    color: var(--red);
+    margin: 8px 0 24px;
+  }
+  .hero-number .cur {
+    font-size: 0.32em;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: normal;
+    margin-right: 10px;
+    vertical-align: 0.55em;
+  }
+  #hero-sentence {
+    font-size: 17px;
+    color: var(--text-2);
+    line-height: 1.6;
+    margin: 0;
+    max-width: 560px;
+  }
+
+  /* Range filter: minimal pill buttons */
+  #range-filter { margin-top: 40px; }
+  #range-filter .segments {
+    display: inline-flex;
+    gap: 4px;
+  }
+  #range-filter button[data-range] {
+    background: transparent;
+    border: 1px solid var(--border-soft);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  #range-filter button[data-range]:hover {
+    background: var(--surface-hover);
+    color: var(--text-2);
+  }
+  #range-filter button[data-range].active {
+    background: var(--surface-3);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  #range-label {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-4);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== Act 2: the breakdown ===== */
+  .leak {
+    margin: 0 0 48px;
+    padding-left: 20px;
+    border-left: 2px solid var(--border);
+  }
+  .leak:last-of-type { margin-bottom: 0; }
+  .leak-number {
+    font-family: var(--font-mono);
     font-weight: 500;
     line-height: 1.05;
     letter-spacing: -1px;
     font-variant-numeric: tabular-nums;
+    margin: 0 0 6px;
   }
-  .tile .tile-number.bad { color: var(--red); }
-  .tile .tile-number .cur {
-    font-size: 0.4em;
-    font-weight: 500;
-    margin-right: 6px;
-    letter-spacing: normal;
-    color: var(--muted);
+  .leak-1 { border-left-color: rgba(239, 68, 68, 0.5); }
+  .leak-1 .leak-number { font-size: 48px; color: var(--red); }
+  .leak-2 { border-left-color: rgba(224, 122, 74, 0.5); }
+  .leak-2 .leak-number { font-size: 38px; color: var(--orange); }
+  .leak-3 { border-left-color: rgba(224, 166, 63, 0.5); }
+  .leak-3 .leak-number { font-size: 30px; color: var(--yellow); }
+  .leak-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 6px;
   }
-  .tile .tile-sub {
+  .leak-sub {
     font-size: 14px;
-    font-weight: 400;
     color: var(--text-2);
-    line-height: 1.5;
+    line-height: 1.55;
     margin: 0;
+    max-width: 560px;
   }
-  .tile .tile-formula {
+  .leak-caveat {
     font-size: 12px;
     color: var(--muted);
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    margin-top: auto;
-    padding-top: 8px;
+    margin: 6px 0 0;
+    max-width: 560px;
   }
+  .formula-box {
+    margin-top: 48px;
+    padding: 16px 20px;
+    background: var(--red-soft);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-2);
+    line-height: 1.6;
+    max-width: 640px;
+  }
+  .formula-box .kicker { margin-bottom: 6px; }
 
-  /* Tile split bars (wait + after-hours) */
-  .tile .split-bar {
+  /* ===== Act 3: after hours ===== */
+  .ah-split-number {
+    font-family: var(--font-mono);
+    font-size: 40px;
+    font-weight: 500;
+    line-height: 1.05;
+    letter-spacing: -1px;
+    font-variant-numeric: tabular-nums;
+    color: var(--red);
+    margin: 0 0 6px;
+  }
+  .ah-split-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 14px;
+  }
+  .split-bar {
     display: flex;
     width: 100%;
-    height: 16px;
+    max-width: 560px;
+    height: 14px;
     border-radius: 999px;
     overflow: hidden;
     gap: 2px;
-    margin: 8px 0 4px;
+    margin: 0 0 12px;
   }
   .split-bar .seg { min-width: 3px; transition: filter 200ms ease; }
   .split-bar .seg:hover { filter: brightness(1.2); }
+  #tile-ah-sub {
+    font-size: 14px;
+    color: var(--text-2);
+    line-height: 1.55;
+    margin: 0;
+    max-width: 560px;
+  }
 
-  /* ===== After-hours detail section ===== */
-  #ah-detail-wrap { margin-top: 20px; }
+  #ah-detail-wrap { margin-top: 32px; }
   button.ah-toggle {
     background: var(--surface-2);
     border: 1px solid var(--border-soft);
@@ -261,18 +348,18 @@
   }
   #ah-detail {
     display: none;
-    margin-top: 16px;
+    margin-top: 20px;
     background: var(--bg-panel);
     border: 1px solid var(--border-soft);
     border-radius: 12px;
-    padding: 8px 24px;
+    padding: 8px 28px;
   }
   /* 3-part narrative: loss (red hero) → pattern (timeline) → fix (green hero) */
-  .ah-part { margin: 32px 0; }
+  .ah-part { margin: 36px 0; }
   .ah-part .kicker { margin-bottom: 8px; }
   .ah-hero-num {
     font-family: var(--font-mono);
-    font-size: 48px;
+    font-size: 44px;
     font-weight: 500;
     line-height: 1.05;
     letter-spacing: -1.5px;
@@ -287,7 +374,7 @@
     margin-right: 8px;
     letter-spacing: normal;
   }
-  .ah-part-sub { font-size: 14px; color: var(--text-2); line-height: 1.5; margin: 0; max-width: 640px; }
+  .ah-part-sub { font-size: 14px; color: var(--text-2); line-height: 1.55; margin: 0; max-width: 640px; }
   .ah-caveat { font-size: 12px; color: var(--muted); margin: 8px 0 0; max-width: 640px; }
   .ah-timeline { margin: 16px 0 0; }
   .ah-timeline-track {
@@ -335,8 +422,8 @@
     margin: 16px 0 12px;
   }
   .ah-secondary {
-    margin: 32px 0 16px;
-    padding-top: 16px;
+    margin: 36px 0 20px;
+    padding-top: 18px;
     border-top: 1px solid var(--border-soft);
   }
   .ah-secondary-num {
@@ -348,43 +435,22 @@
     margin: 2px 0 4px;
   }
 
-  /* ===== Tier 1: compact metric cards ===== */
-  .card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 16px;
-    margin-top: 16px;
-  }
-  .card {
-    background: var(--surface-1);
-    border: 1px solid var(--border-soft);
-    border-radius: 8px;
-    padding: 16px 18px;
-  }
-  .card .card-value {
-    font-family: var(--font-mono);
-    font-size: 18px;
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-    margin: 2px 0 4px;
-  }
-  .card .card-sub { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0; }
-
-  /* ===== Tier 1: capped ignored-lead list ===== */
-  #ignored-section { margin-top: 44px; }
+  /* ===== Act 4: the evidence (missed patients) ===== */
   #ignored-section .headline {
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: normal;
+    font-size: 15px;
+    color: var(--text-2);
+    font-weight: 400;
     margin: 0 0 4px;
+    max-width: 640px;
   }
   #ignored-section .subline { font-size: 14px; color: var(--muted); margin: 0; }
-  .lead-list { margin-top: 16px; border-top: 1px solid var(--border-soft); max-width: 640px; }
+  .lead-list { margin-top: 24px; border-top: 1px solid var(--border-soft); max-width: 640px; }
   .lead-list .lead-row {
     display: flex;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
-    padding: 10px 8px;
+    gap: 16px;
+    padding: 14px 8px;
     margin: 0 -8px;
     border-bottom: 1px solid var(--border-soft);
     border-radius: 6px;
@@ -392,7 +458,13 @@
     transition: background 200ms ease;
   }
   .lead-list .lead-row:hover { background: rgba(255, 255, 255, 0.03); }
-  .lead-list .lead-name { font-weight: 500; color: var(--text); }
+  .lead-list .lead-name { font-weight: 500; color: var(--text); flex: 1; }
+  .lead-list .lead-status {
+    color: var(--red);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
   .lead-list .lead-time {
     color: var(--muted);
     font-family: var(--font-mono);
@@ -418,7 +490,7 @@
   }
   button.toggle::after { content: " ↓"; color: var(--text-4); }
   button.toggle[aria-expanded="true"]::after { content: " ↑"; }
-  button.toggle.small { font-size: 12px; padding: 7px 14px; margin-top: 14px; }
+  button.toggle.small { font-size: 12px; padding: 7px 14px; margin-top: 16px; }
 
   .collapse {
     display: grid;
@@ -428,29 +500,30 @@
   .collapse > .collapse-inner { overflow: hidden; }
   .collapse.open { grid-template-rows: 1fr; }
 
-  /* ===== Tiers 2 & 3 ===== */
-  .tier-controls { margin-top: 48px; display: flex; flex-direction: column; gap: 28px; }
+  /* ===== Act 5: the details ===== */
+  .detail-row {
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--border-soft);
+    max-width: 640px;
+  }
+  .detail-row .kicker { margin: 0; flex: 0 0 180px; }
+  .detail-row .detail-body { flex: 1; }
+  .detail-value {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    margin: 0 0 4px;
+  }
+  .detail-sub { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0; }
+
+  .tier-controls { margin-top: 40px; display: flex; flex-direction: column; gap: 28px; }
   .tier-body { padding: 24px 0 6px; border-top: 1px solid var(--border-soft); margin-top: 16px; }
   .tier-body .headline { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
   .tier-body .subline { font-size: 14px; color: var(--muted); margin: 0 0 6px; }
-  .callout {
-    margin: 22px 0 6px;
-    background: var(--red-soft);
-    border: 1px solid rgba(239, 68, 68, 0.25);
-    border-radius: 8px;
-    padding: 18px 22px;
-    max-width: 640px;
-  }
-  .callout .callout-big {
-    font-family: var(--font-mono);
-    font-size: 22px;
-    font-weight: 500;
-    letter-spacing: -0.5px;
-    color: var(--red);
-    margin: 0 0 4px;
-    font-variant-numeric: tabular-nums;
-  }
-  .callout .callout-sub { font-size: 14px; color: var(--text-2); margin: 0; }
 
   /* Table */
   .table-wrap {
@@ -520,10 +593,16 @@
     .header-inner { padding: 12px 16px; flex-wrap: wrap; }
     header .sub { display: none; }
     main { padding: 0 16px 64px; }
-    .tile-grid, .card-grid { grid-template-columns: 1fr; }
-    .tile .tile-number { font-size: 28px; letter-spacing: -0.5px; }
-    #ignored-section .headline, .tier-body .headline { font-size: 16px; }
+    .act { padding: 44px 0; }
+    .act h2 { font-size: 20px; }
+    .hero-number { font-size: 44px; letter-spacing: -1px; }
+    .leak-1 .leak-number { font-size: 36px; }
+    .leak-2 .leak-number { font-size: 30px; }
+    .leak-3 .leak-number { font-size: 26px; }
+    .ah-split-number { font-size: 32px; }
     .ah-hero-num { font-size: 32px; letter-spacing: -1px; }
+    .detail-row { flex-direction: column; gap: 6px; }
+    .detail-row .kicker { flex: none; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -531,7 +610,7 @@
     html { scroll-behavior: auto; }
   }
 
-  /* ===== Print: light theme ===== */
+  /* ===== Print: light theme, Acts 1-4 only ===== */
   @media print {
     :root {
       --bg: #ffffff;
@@ -550,17 +629,17 @@
       --red: #c03528;
       --green: #1e8a4f;
       --yellow: #a86b12;
+      --orange: #b0592e;
     }
     body { background: #ffffff; color: var(--text); }
     header { position: static; background: #ffffff; backdrop-filter: none; }
     header button, .no-print { display: none !important; }
     #dashboard > * { animation: none !important; }
-    .tile-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .card-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
-    .tile, .card { background: #ffffff; border: 1px solid var(--border); }
-    .tile, .card, #ignored-section { break-inside: avoid; }
-    /* Tier 1 only: hide expandable tiers and the expanded remainder of the lead list */
-    .tier-controls, #ignored-rest, #ignored-toggle, #ah-detail-wrap { display: none !important; }
+    .act { padding: 28px 0; }
+    .hero-number { font-size: 52px; }
+    /* Acts 1-4 print; Act 5 details, toggles, and the after-hours expandable detail stay on screen only */
+    #act-details, #ah-detail-wrap, #ignored-rest, #ignored-toggle, .tier-controls { display: none !important; }
+    .leak, #ignored-section, .formula-box { break-inside: avoid; }
   }
 </style>
 </head>
@@ -575,93 +654,94 @@
   </div>
 </header>
 <main>
-  <div id="range-filter" class="no-print">
-    <div class="segments">
-      <button type="button" data-range="30d">Last 30 days</button>
-      <button type="button" data-range="90d">Last 90 days</button>
-      <button type="button" data-range="1y">Last 1 year</button>
-    </div>
-    <div id="range-label"></div>
-  </div>
   <div id="loading">Reading your conversations…</div>
   <div id="error"></div>
   <div id="dashboard" style="display:none;">
 
-    <!-- ===== TIER 1: Executive summary ===== -->
-    <div class="tile-grid">
-      <div class="tile">
-        <p class="kicker">Leads never replied to</p>
-        <div class="tile-number bad" id="tile-ignored-count">-</div>
-        <p class="tile-sub" id="tile-ignored-sub"></p>
+    <!-- ===== ACT 1: THE HEADLINE ===== -->
+    <section class="act" id="act-hero">
+      <p class="kicker">Revenue you didn’t capture</p>
+      <div class="hero-number"><span class="cur">AED</span><span id="tile-money-amount">-</span></div>
+      <p id="hero-sentence"></p>
+      <div id="range-filter" class="no-print">
+        <div class="segments">
+          <button type="button" data-range="30d">Last 30 days</button>
+          <button type="button" data-range="90d">Last 90 days</button>
+          <button type="button" data-range="1y">Last 1 year</button>
+        </div>
+        <div id="range-label"></div>
       </div>
-      <div class="tile">
-        <p class="kicker">Slow-replied leads went silent</p>
-        <div class="tile-number bad" id="tile-dropoff-pct">-</div>
-        <p class="tile-sub" id="tile-dropoff-sub"></p>
-      </div>
-      <div class="tile">
-        <p class="kicker">Money left on the table</p>
-        <div class="tile-number bad"><span class="cur">AED</span><span id="tile-money-amount">-</span></div>
-        <p class="tile-sub">Estimated revenue lost to patients you never answered.</p>
-        <div class="tile-formula" id="tile-money-formula"></div>
-        <p class="tile-sub" id="tile-mean-reply"></p>
-      </div>
-      <div class="tile">
-        <p class="kicker">How long patients wait</p>
-        <div class="tile-number bad" id="tile-wait-mean">-</div>
-        <p class="tile-sub" id="tile-wait-summary"></p>
-      </div>
-      <div class="tile">
-        <p class="kicker">After hours = lost patients</p>
-        <div class="tile-number bad" id="tile-ah-pct">-</div>
-        <div class="split-bar" id="tile-ah-bar"></div>
-        <p class="tile-sub" id="tile-ah-sub">of your leads message you outside business hours.</p>
-      </div>
-    </div>
+    </section>
 
-    <div id="ah-detail-wrap" class="no-print">
-      <button type="button" class="ah-toggle" id="ah-detail-toggle" aria-expanded="false" aria-controls="ah-detail">See what after-hours is costing you →</button>
-      <div id="ah-detail">
-        <div class="ah-part ah-hero red">
-          <p class="kicker">After-hours revenue at risk</p>
-          <div class="ah-hero-num"><span class="cur">AED</span><span id="ah-risk-value">-</span></div>
-          <p class="ah-part-sub" id="ah-risk-sub"></p>
-        </div>
-        <div class="ah-part">
-          <p class="kicker">When after-hours leads arrive</p>
-          <div class="ah-timeline" id="ah-bucket-bar"></div>
-          <div class="ah-timeline-hours" id="ah-bucket-legend"></div>
-          <p class="ah-part-sub" id="ah-bucket-sub"></p>
-        </div>
-        <div class="ah-part ah-hero green">
-          <p class="kicker">What instant replies would recover</p>
-          <div class="ah-hero-num"><span class="cur">AED</span><span id="ah-recover-value">-</span></div>
-          <p class="ah-part-sub" id="ah-recover-sub"></p>
-          <p class="ah-caveat" id="ah-recover-caveat"></p>
-        </div>
-        <div class="ah-secondary">
-          <p class="kicker">Next-morning reply rate</p>
-          <div class="ah-secondary-num" id="ah-morning-value">-</div>
-          <p class="ah-caveat" id="ah-morning-sub"></p>
-        </div>
-      </div>
-    </div>
+    <!-- ===== ACT 2: THE BREAKDOWN ===== -->
+    <section class="act" id="act-breakdown">
+      <h2>Where the AED <span id="breakdown-amount">-</span> comes from</h2>
 
-    <div class="card-grid">
-      <div class="card">
-        <p class="kicker">Staff time consumed</p>
-        <div class="card-value" id="card-staff-value">-</div>
-        <p class="card-sub" id="card-staff-sub"></p>
+      <div class="leak leak-1">
+        <div class="leak-number" id="tile-ignored-count">-</div>
+        <p class="leak-label">patients never got a reply</p>
+        <p class="leak-sub" id="tile-ignored-sub"></p>
       </div>
-      <div class="card">
-        <p class="kicker">Best day / worst day</p>
-        <div class="card-value" id="card-days-value">-</div>
-        <p class="card-sub" id="card-days-sub"></p>
-      </div>
-    </div>
 
-    <div id="ignored-section">
-      <p class="kicker">Leads you never replied to</p>
+      <div class="leak leak-2">
+        <div class="leak-number" id="tile-dropoff-pct">-</div>
+        <p class="leak-label">patients waited too long</p>
+        <p class="leak-sub" id="tile-dropoff-sub"></p>
+      </div>
+
+      <div class="leak leak-3">
+        <div class="leak-number" id="tile-wait-mean">-</div>
+        <p class="leak-label">average wait before a reply</p>
+        <p class="leak-sub" id="tile-wait-summary"></p>
+        <p class="leak-caveat" id="tile-mean-reply"></p>
+      </div>
+
+      <div class="formula-box">
+        <p class="kicker">How the number is calculated</p>
+        <div id="tile-money-formula"></div>
+      </div>
+    </section>
+
+    <!-- ===== ACT 3: THE PATTERN (after hours) ===== -->
+    <section class="act" id="act-pattern">
+      <h2>After hours is where you’re bleeding</h2>
+      <div class="ah-split-number" id="tile-ah-pct">-</div>
+      <p class="ah-split-label">of your leads message you outside business hours</p>
+      <div class="split-bar" id="tile-ah-bar"></div>
+      <p id="tile-ah-sub"></p>
+
+      <div id="ah-detail-wrap" class="no-print">
+        <button type="button" class="ah-toggle" id="ah-detail-toggle" aria-expanded="false" aria-controls="ah-detail">See what after-hours is costing you →</button>
+        <div id="ah-detail">
+          <div class="ah-part ah-hero red">
+            <p class="kicker">After-hours revenue at risk</p>
+            <div class="ah-hero-num"><span class="cur">AED</span><span id="ah-risk-value">-</span></div>
+            <p class="ah-part-sub" id="ah-risk-sub"></p>
+          </div>
+          <div class="ah-part">
+            <p class="kicker">When after-hours leads arrive</p>
+            <div class="ah-timeline" id="ah-bucket-bar"></div>
+            <div class="ah-timeline-hours" id="ah-bucket-legend"></div>
+            <p class="ah-part-sub" id="ah-bucket-sub"></p>
+          </div>
+          <div class="ah-part ah-hero green">
+            <p class="kicker">What instant replies would recover</p>
+            <div class="ah-hero-num"><span class="cur">AED</span><span id="ah-recover-value">-</span></div>
+            <p class="ah-part-sub" id="ah-recover-sub"></p>
+            <p class="ah-caveat" id="ah-recover-caveat"></p>
+          </div>
+          <div class="ah-secondary">
+            <p class="kicker">Next-morning reply rate</p>
+            <div class="ah-secondary-num" id="ah-morning-value">-</div>
+            <p class="ah-caveat" id="ah-morning-sub"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== ACT 4: THE EVIDENCE ===== -->
+    <section class="act" id="ignored-section">
+      <h2>The patients you didn’t reply to</h2>
       <p class="headline" id="ignored-headline"></p>
       <p class="subline">These are real people who wanted to hear back from you:</p>
       <div class="lead-list" id="ignored-list"></div>
@@ -671,53 +751,72 @@
         </div>
       </div>
       <button type="button" class="toggle small no-print" id="ignored-toggle" aria-expanded="false" style="display:none;"></button>
-    </div>
+    </section>
 
-    <!-- ===== TIERS 2 & 3 ===== -->
-    <div class="tier-controls no-print">
+    <!-- ===== ACT 5: THE DETAILS ===== -->
+    <section class="act" id="act-details">
+      <h2>The details</h2>
 
-      <div>
-        <button type="button" class="toggle" id="tier2-toggle" aria-expanded="false" aria-controls="tier2">Show me the damage</button>
-        <div class="collapse" id="tier2">
-          <div class="collapse-inner">
-            <div class="tier-body">
-              <p class="headline">Every lead you never replied to</p>
-              <div class="lead-list" id="damage-list"></div>
-            </div>
-          </div>
+      <div class="detail-row">
+        <p class="kicker">Staff time consumed</p>
+        <div class="detail-body">
+          <div class="detail-value" id="card-staff-value">-</div>
+          <p class="detail-sub" id="card-staff-sub"></p>
+        </div>
+      </div>
+      <div class="detail-row">
+        <p class="kicker">Best day / worst day</p>
+        <div class="detail-body">
+          <div class="detail-value" id="card-days-value">-</div>
+          <p class="detail-sub" id="card-days-sub"></p>
         </div>
       </div>
 
-      <div>
-        <button type="button" class="toggle" id="tier3-toggle" aria-expanded="false" aria-controls="tier3">View full breakdown</button>
-        <div class="collapse" id="tier3">
-          <div class="collapse-inner">
-            <div class="tier-body">
-              <p class="headline">Every conversation</p>
-              <p class="subline">Sorted by longest wait first. Your worst cases are at the top.</p>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>First Message Time</th>
-                      <th>Status</th>
-                      <th>Wait Time</th>
-                    </tr>
-                  </thead>
-                  <tbody id="conv-table"></tbody>
-                </table>
+      <div class="tier-controls no-print">
+
+        <div>
+          <button type="button" class="toggle" id="tier2-toggle" aria-expanded="false" aria-controls="tier2">Show me the damage</button>
+          <div class="collapse" id="tier2">
+            <div class="collapse-inner">
+              <div class="tier-body">
+                <p class="headline">Every lead you never replied to</p>
+                <div class="lead-list" id="damage-list"></div>
               </div>
-              <p class="headline" style="margin-top:34px;">When leads message you</p>
-              <p class="subline">Leads per day and hour. Redder cells mean slower median replies.</p>
-              <div class="heatmap-wrap" id="heatmap-grid"></div>
-              <div class="footnote" id="staff-footnote"></div>
             </div>
           </div>
         </div>
-      </div>
 
-    </div>
+        <div>
+          <button type="button" class="toggle" id="tier3-toggle" aria-expanded="false" aria-controls="tier3">View full breakdown</button>
+          <div class="collapse" id="tier3">
+            <div class="collapse-inner">
+              <div class="tier-body">
+                <p class="headline">Every conversation</p>
+                <p class="subline">Sorted by longest wait first. Your worst cases are at the top.</p>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>First Message Time</th>
+                        <th>Status</th>
+                        <th>Wait Time</th>
+                      </tr>
+                    </thead>
+                    <tbody id="conv-table"></tbody>
+                  </table>
+                </div>
+                <p class="headline" style="margin-top:34px;">When leads message you</p>
+                <p class="subline">Leads per day and hour. Redder cells mean slower median replies.</p>
+                <div class="heatmap-wrap" id="heatmap-grid"></div>
+                <div class="footnote" id="staff-footnote"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
 
   </div>
 </main>
@@ -778,6 +877,7 @@
   function leadRow(c) {
     var row = el('div', 'lead-row');
     row.appendChild(el('span', 'lead-name', c.chatName || c.chatJid || 'Unknown'));
+    row.appendChild(el('span', 'lead-status', 'never replied'));
     row.appendChild(el('span', 'lead-time', fmtDate(c.firstLeadMessageTime || c.startTime)));
     return row;
   }
@@ -801,11 +901,12 @@
     });
     document.getElementById('tile-money-formula').textContent = '';
     document.getElementById('tile-mean-reply').textContent = '';
+    document.getElementById('hero-sentence').textContent = '';
     document.getElementById('staff-footnote').textContent = '';
     ['ah-risk-sub', 'ah-bucket-sub', 'ah-morning-sub', 'ah-recover-sub', 'ah-recover-caveat']
       .forEach(function (id) { document.getElementById(id).textContent = ''; });
     setAhDetail(false);
-    // Collapse everything back to the Tier 1 default view
+    // Collapse everything back to the default narrative view
     setCollapse(document.getElementById('ignored-rest'), document.getElementById('ignored-toggle'), false);
     setCollapse(document.getElementById('tier2'), document.getElementById('tier2-toggle'), false);
     setCollapse(document.getElementById('tier3'), document.getElementById('tier3-toggle'), false);
@@ -813,6 +914,8 @@
 
   var COLORS = { green: '#10b981', yellow: '#e0a63f', orange: '#e07a4a', red: '#ef4444' };
   var DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var RANGE_PHRASES = { '30d': 'the last 30 days', '90d': 'the last 90 days', '1y': 'the last year' };
+  var currentRange = '30d';
 
   // ===== After-hours detail section =====
   var AH_BUCKET_COLORS = ['#e07a4a', '#ef4444', '#e0a63f', '#62666d'];
@@ -991,40 +1094,58 @@
         ' to ' + to.toLocaleDateString(undefined, opts);
     }
 
-    // ===== Tile 1: Leads never replied to =====
     var ignored = report.zeroReply.neverReplied;
     var totalLeads = report.zeroReply.total;
+    var rar = report.revenueAtRisk;
+    var rangePhrase = RANGE_PHRASES[currentRange] || 'this period';
+
+    // ===== Act 1: the headline =====
+    document.getElementById('tile-money-amount').textContent = fmtMoney(rar.estimatedRevenueAtRisk);
+    document.getElementById('hero-sentence').textContent =
+      'You didn’t reply to ' + ignored + ' of ' + totalLeads +
+      ' patients who messaged you in ' + rangePhrase + '. That’s AED ' +
+      fmtMoney(rar.estimatedRevenueAtRisk) + ' in bookings you didn’t capture.';
+
+    // ===== Act 2: the breakdown =====
+    document.getElementById('breakdown-amount').textContent = fmtMoney(rar.estimatedRevenueAtRisk);
+
+    // Leak 1: never replied
     document.getElementById('tile-ignored-count').textContent = String(ignored);
     document.getElementById('tile-ignored-sub').textContent =
-      totalLeads + ' patients messaged you. You didn’t reply to ' + ignored + ' of them.';
+      'They messaged you and heard nothing back — ' + ignored + ' of the ' +
+      totalLeads + ' patients who contacted you.';
 
-    // ===== Tile 2: Money left on the table =====
-    var rar = report.revenueAtRisk;
-    document.getElementById('tile-money-amount').textContent = fmtMoney(rar.estimatedRevenueAtRisk);
+    // Leak 2: slow-replied leads went silent
+    var dd = report.delayDropoff || {};
+    var delayedN = dd.delayedConversations || 0;
+    document.getElementById('tile-dropoff-pct').textContent = String(delayedN);
+    document.getElementById('tile-dropoff-sub').textContent =
+      'They waited more than 15 minutes for a reply. Of those, ' +
+      (dd.wentSilent || 0) + ' went silent after you finally answered (' +
+      fmtPct(dd.wentSilentPercentage || 0) + '). Slow replies kill leads.';
+
+    // Leak 3: average wait
+    var mrt = report.meanReplyTime;
+    if (mrt && mrt.meanMinutes !== null) {
+      document.getElementById('tile-wait-mean').textContent = fmtMinutes(mrt.meanMinutes);
+      document.getElementById('tile-wait-summary').textContent =
+        'For patients who did hear back, this is how long they waited on average.';
+      document.getElementById('tile-mean-reply').textContent =
+        'Based on ' + mrt.leadCount + ' patients over the ' + mrt.windowLabel + ' window.';
+    } else {
+      document.getElementById('tile-wait-mean').textContent = '-';
+      document.getElementById('tile-wait-summary').textContent = '';
+      document.getElementById('tile-mean-reply').textContent = '';
+    }
+
+    // The formula behind the headline number
     var bookings = rar.zeroReplyLeads * rar.conversionRate;
     document.getElementById('tile-money-formula').textContent =
       rar.zeroReplyLeads + ' never replied to × ' + fmtPct(rar.conversionRate * 100) +
       ' × AED ' + fmtMoney(rar.avgTicketValue) + ' = ' +
-      bookings.toFixed(1) + ' lost bookings';
-    var mrt = report.meanReplyTime;
-    document.getElementById('tile-mean-reply').textContent =
-      mrt && mrt.meanMinutes !== null
-        ? 'Patients who heard back waited ' + fmtMinutes(mrt.meanMinutes) +
-          ' on average (' + mrt.leadCount + ' patients over the ' + mrt.windowLabel + ' window).'
-        : '';
+      bookings.toFixed(1) + ' lost bookings = AED ' + fmtMoney(rar.estimatedRevenueAtRisk);
 
-    // ===== Tile 3: How long patients wait =====
-    if (mrt && mrt.meanMinutes !== null) {
-      document.getElementById('tile-wait-mean').textContent = fmtMinutes(mrt.meanMinutes);
-      document.getElementById('tile-wait-summary').textContent =
-        'Average total wait per patient who heard back (' + mrt.leadCount +
-        ' patients over the ' + mrt.windowLabel + ' window).';
-    } else {
-      document.getElementById('tile-wait-mean').textContent = '-';
-      document.getElementById('tile-wait-summary').textContent = '';
-    }
-
-    // ===== Tile 4: After hours =====
+    // ===== Act 3: after hours =====
     var ah = report.afterHours;
     document.getElementById('tile-ah-pct').textContent = fmtPct(ah.percentage);
     var during = ah.total - ah.afterHoursCount;
@@ -1033,47 +1154,14 @@
       { count: ah.afterHoursCount, color: COLORS.red }
     ]);
     document.getElementById('tile-ah-sub').textContent =
-      during + ' during hours vs ' + ah.afterHoursCount +
-      ' after hours — nobody was at the desk for them. ' +
-      fmtPct(ah.replyPercentage || 0) + ' of after-hours leads still got a reply.';
+      during + ' leads came during hours vs ' + ah.afterHoursCount +
+      ' after hours — nobody was at the desk for them. Only ' +
+      fmtPct(ah.replyPercentage || 0) + ' of after-hours leads got a reply.';
 
-    // ===== After-hours expandable detail =====
+    // After-hours expandable detail
     renderAfterHoursDetail(report);
 
-    // ===== Tile: slow-replied leads went silent =====
-    var dd = report.delayDropoff || {};
-    var delayedN = dd.delayedConversations || 0;
-    document.getElementById('tile-dropoff-pct').textContent = fmtPct(dd.wentSilentPercentage || 0);
-    document.getElementById('tile-dropoff-sub').textContent =
-      'Of the ' + delayedN + ' leads who waited more than 15 minutes for a reply, ' +
-      (dd.wentSilent || 0) + ' never wrote back after you finally answered (' +
-      fmtPct(dd.wentSilentPercentage || 0) + '). Slow replies kill leads.';
-
-    // ===== Card 5: Staff time wasted =====
-    var sc = report.staffCost;
-    if (sc) {
-      document.getElementById('card-staff-value').textContent =
-        sc.hours.toFixed(1) + ' hrs = AED ' + fmtMoney(sc.cost);
-      document.getElementById('card-staff-sub').textContent =
-        'of receptionist time spent typing WhatsApp replies (AED ' +
-        fmtMoney(sc.hourlyRate) + '/hr).';
-    }
-
-    // ===== Card 6: Best day / worst day =====
-    var db = report.dayBreakdown;
-    if (db && db.bestDay && db.worstDay) {
-      document.getElementById('card-days-value').textContent =
-        db.bestDay.day + ' / ' + db.worstDay.day;
-      document.getElementById('card-days-sub').textContent =
-        'Best: ' + db.bestDay.day + ' (' + fmtMinutesShort(db.bestDay.medianResponseMinutes) +
-        '). Worst: ' + db.worstDay.day + ' (' + fmtMinutesShort(db.worstDay.medianResponseMinutes) + ').';
-    } else {
-      document.getElementById('card-days-value').textContent = '-';
-      document.getElementById('card-days-sub').textContent =
-        'Not enough replied conversations to compare days.';
-    }
-
-    // ===== Tier 1: ignored-lead list, capped at 10 =====
+    // ===== Act 4: the evidence — ignored-lead list, capped at 10 =====
     document.getElementById('ignored-headline').textContent =
       totalLeads + ' patients messaged you. You didn’t reply to ' + ignored + ' of them.';
     var neverConvs = report.conversations
@@ -1093,11 +1181,35 @@
       ignoredToggle.style.display = 'none';
     }
 
-    // ===== Tier 2: the damage =====
+    // ===== Act 5: staff time =====
+    var sc = report.staffCost;
+    if (sc) {
+      document.getElementById('card-staff-value').textContent =
+        sc.hours.toFixed(1) + ' hrs = AED ' + fmtMoney(sc.cost);
+      document.getElementById('card-staff-sub').textContent =
+        'of receptionist time spent typing WhatsApp replies (AED ' +
+        fmtMoney(sc.hourlyRate) + '/hr).';
+    }
+
+    // ===== Act 5: best day / worst day =====
+    var db = report.dayBreakdown;
+    if (db && db.bestDay && db.worstDay) {
+      document.getElementById('card-days-value').textContent =
+        db.bestDay.day + ' / ' + db.worstDay.day;
+      document.getElementById('card-days-sub').textContent =
+        'Best: ' + db.bestDay.day + ' (' + fmtMinutesShort(db.bestDay.medianResponseMinutes) +
+        '). Worst: ' + db.worstDay.day + ' (' + fmtMinutesShort(db.worstDay.medianResponseMinutes) + ').';
+    } else {
+      document.getElementById('card-days-value').textContent = '-';
+      document.getElementById('card-days-sub').textContent =
+        'Not enough replied conversations to compare days.';
+    }
+
+    // ===== Act 5, tier 2: the damage =====
     var damageList = document.getElementById('damage-list');
     neverConvs.forEach(function (c) { damageList.appendChild(leadRow(c)); });
 
-    // ===== Tier 3: every conversation, longest wait first =====
+    // ===== Act 5, tier 3: every conversation, longest wait first =====
     var tbody = document.getElementById('conv-table');
     var convs = report.conversations.slice().sort(function (a, b) {
       // Never-replied waits are infinite — they go first, newest ignored lead on top.
@@ -1121,7 +1233,7 @@
       tbody.appendChild(tr);
     });
 
-    // ===== Tier 3: day/hour heatmap =====
+    // ===== Act 5, tier 3: day/hour heatmap =====
     renderHeatmap(report.heatmap || []);
 
     if (report.staffHours) {
@@ -1200,6 +1312,7 @@
   }
 
   function loadAudit(range) {
+    currentRange = range;
     setActiveButton(range);
     document.getElementById('error').style.display = 'none';
     document.getElementById('dashboard').style.display = 'none';
