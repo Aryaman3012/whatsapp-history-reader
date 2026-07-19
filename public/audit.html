@@ -578,6 +578,7 @@
   .pill.replied { background: var(--green-soft); color: var(--green); }
   .pill.delayed { background: var(--yellow-soft); color: var(--yellow); }
   .pill.never { background: var(--red-soft); color: var(--red); }
+  .pill.unanswered { background: var(--yellow-soft); color: var(--yellow); }
   .footnote { margin-top: 20px; font-size: 13px; color: var(--muted); }
 
   /* Heatmap grid */
@@ -1183,8 +1184,18 @@
     // ===== Act 4: the evidence — ignored-lead list, capped at 10 =====
     document.getElementById('ignored-headline').textContent =
       totalLeads + ' patients messaged you. You didn’t reply to ' + ignored + ' of them.';
-    var neverConvs = report.conversations
-      .filter(function (c) { return c.status === 'never'; })
+    // One row per LEAD, not per session — keep each lead's earliest ignored message.
+    var neverByLead = {};
+    report.conversations.forEach(function (c) {
+      if (c.status !== 'never') return;
+      var key = c.chatJid || '';
+      var t = c.firstLeadMessageTime || c.startTime;
+      if (!neverByLead[key] || t < (neverByLead[key].firstLeadMessageTime || neverByLead[key].startTime)) {
+        neverByLead[key] = c;
+      }
+    });
+    var neverConvs = Object.keys(neverByLead)
+      .map(function (k) { return neverByLead[k]; })
       .sort(function (a, b) {
         return (a.firstLeadMessageTime || a.startTime) - (b.firstLeadMessageTime || b.startTime);
       });
@@ -1231,12 +1242,13 @@
     // ===== Act 5, tier 3: every conversation, longest wait first =====
     var tbody = document.getElementById('conv-table');
     var convs = report.conversations.slice().sort(function (a, b) {
-      // Never-replied waits are infinite — they go first, newest ignored lead on top.
-      var aNever = a.status === 'never';
-      var bNever = b.status === 'never';
-      if (aNever && bNever) return (b.startTime || 0) - (a.startTime || 0);
-      if (aNever) return -1;
-      if (bNever) return 1;
+      // No-reply waits are infinite — never-replied leads first, then
+      // unanswered follow-ups, newest on top within each group.
+      var rank = function (c) { return c.status === 'never' ? 2 : c.status === 'unanswered' ? 1 : 0; };
+      var ra = rank(a);
+      var rb = rank(b);
+      if (ra !== rb) return rb - ra;
+      if (ra > 0) return (b.startTime || 0) - (a.startTime || 0);
       return (b.firstResponseMinutes || 0) - (a.firstResponseMinutes || 0);
     });
     convs.forEach(function (c) {
@@ -1245,10 +1257,12 @@
       tr.appendChild(el('td', 'num', fmtDate(c.firstLeadMessageTime || c.startTime)));
       var statusTd = document.createElement('td');
       statusTd.appendChild(el('span', 'pill ' + c.status,
-        c.status === 'never' ? 'No Reply' : c.status === 'delayed' ? 'Delayed' : 'Replied'));
+        c.status === 'never' ? 'No Reply' :
+        c.status === 'unanswered' ? 'Unanswered' :
+        c.status === 'delayed' ? 'Delayed' : 'Replied'));
       tr.appendChild(statusTd);
       tr.appendChild(el('td', 'num',
-        c.status === 'never' ? 'Still waiting' : fmtMinutes(c.firstResponseMinutes)));
+        c.firstResponseMinutes === null ? 'Still waiting' : fmtMinutes(c.firstResponseMinutes)));
       tbody.appendChild(tr);
     });
 

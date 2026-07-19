@@ -23,13 +23,22 @@ const MIN = 60;
 // Monday 2026-01-05 10:00 local time — a working day inside 9am-7pm hours.
 const BASE = new Date(2026, 0, 5, 10, 0, 0).getTime() / 1000;
 
-function msg(offsetMinutes: number, fromMe: 0 | 1, text = 'hello'): AuditMessage {
+function msg(
+  offsetMinutes: number,
+  fromMe: 0 | 1,
+  text = 'hello',
+  chatJid = 'lead@s.whatsapp.net'
+): AuditMessage {
   return {
     timestamp: BASE + offsetMinutes * MIN,
     is_from_me: fromMe,
     message_text: text,
-    chat_jid: 'lead@s.whatsapp.net',
+    chat_jid: chatJid,
   };
+}
+
+function chatMsg(chatJid: string, offsetMinutes: number, fromMe: 0 | 1): AuditMessage {
+  return msg(offsetMinutes, fromMe, 'hello', chatJid);
 }
 
 function conv(messages: AuditMessage[], gapThresholdMinutes = 180) {
@@ -63,19 +72,38 @@ test('sessions split on the 18h default gap', () => {
   assert.equal(twoSessions.length, 2);
 });
 
-test('zeroReplyRate: 0% when all replied', () => {
-  const convs = [conv([msg(0, 0), msg(3, 1)]), conv([msg(0, 0), msg(8, 1)])];
+test('zeroReplyRate: 0% when all leads replied', () => {
+  const convs = [
+    conv([chatMsg('a@lid', 0, 0), chatMsg('a@lid', 3, 1)]),
+    conv([chatMsg('b@lid', 0, 0), chatMsg('b@lid', 8, 1)]),
+  ];
   const rate = zeroReplyRate(convs);
   assert.equal(rate.neverReplied, 0);
   assert.equal(rate.percentage, 0);
 });
 
-test('zeroReplyRate: 50% when half replied', () => {
-  const convs = [conv([msg(0, 0), msg(3, 1)]), conv([msg(0, 0), msg(5, 0)])];
+test('zeroReplyRate: 50% when half the leads replied', () => {
+  const convs = [
+    conv([chatMsg('a@lid', 0, 0), chatMsg('a@lid', 3, 1)]),
+    conv([chatMsg('b@lid', 0, 0), chatMsg('b@lid', 5, 0)]),
+  ];
   const rate = zeroReplyRate(convs);
   assert.equal(rate.neverReplied, 1);
   assert.equal(rate.total, 2);
   assert.equal(rate.percentage, 50);
+});
+
+test('zeroReplyRate: lead-level across sessions — one replied session clears the lead', () => {
+  // Same lead: session 1 replied, session 2 (>18h later) unanswered.
+  const convs = groupMessagesIntoConversations([
+    chatMsg('a@lid', 0, 0),
+    chatMsg('a@lid', 10, 1),
+    chatMsg('a@lid', 48 * 60, 0),
+  ]);
+  assert.equal(convs.length, 2);
+  const rate = zeroReplyRate(convs);
+  assert.equal(rate.total, 1);
+  assert.equal(rate.neverReplied, 0);
 });
 
 test('afterHoursLeadShare: counts messages outside business hours correctly', () => {
@@ -109,9 +137,9 @@ test('responseDelayDropoff: correctly classifies silent vs. re-engaged leads', (
 });
 
 test('revenueAtRisk: arithmetic check with known inputs', () => {
-  const zero = conv([msg(0, 0)]); // never replied — at risk
-  const slow = conv([msg(0, 0), msg(20, 1)]); // 20min reply — replied, not at risk
-  const fast = conv([msg(0, 0), msg(2, 1)]); // 2min reply — not at risk
+  const zero = conv([chatMsg('a@lid', 0, 0)]); // never replied — at risk
+  const slow = conv([chatMsg('b@lid', 0, 0), chatMsg('b@lid', 20, 1)]); // 20min reply — not at risk
+  const fast = conv([chatMsg('c@lid', 0, 0), chatMsg('c@lid', 2, 1)]); // 2min reply — not at risk
   const result = revenueAtRisk([zero, slow, fast], 0.1, 1000);
   assert.equal(result.zeroReplyLeads, 1);
   assert.equal(result.atRiskLeads, 1);

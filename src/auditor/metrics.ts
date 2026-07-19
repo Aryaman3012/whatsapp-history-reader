@@ -105,14 +105,36 @@ export function responseTimeBuckets(conversations: Conversation[]): ResponseTime
 // ---------------------------------------------------------------------------
 
 export interface ZeroReplyRate {
+  /** Unique leads (chats) that never got a clinic reply in ANY of their conversations. */
   neverReplied: number;
+  /** Unique leads (chats) with at least one lead-initiated conversation. */
   total: number;
   percentage: number;
 }
 
+function chatKey(conv: Conversation): string {
+  return conv.chatJid ?? '';
+}
+
+/** Chats that got a clinic reply in at least one of their lead conversations. */
+export function chatsEverReplied(conversations: Conversation[]): Set<string> {
+  const replied = new Set<string>();
+  for (const c of conversations) {
+    if (firstResponseTime(c) !== null) replied.add(chatKey(c));
+  }
+  return replied;
+}
+
+/**
+ * Lead-level, across sessions: a lead counts as never-replied only when NONE
+ * of their conversations ever got a clinic reply. A lead with one replied and
+ * one unanswered conversation is not "never replied".
+ */
 export function zeroReplyRate(conversations: Conversation[]): ZeroReplyRate {
-  const total = conversations.length;
-  const neverReplied = conversations.filter((c) => firstResponseTime(c) === null).length;
+  const allChats = new Set(conversations.map(chatKey));
+  const replied = chatsEverReplied(conversations);
+  const total = allChats.size;
+  const neverReplied = [...allChats].filter((jid) => !replied.has(jid)).length;
   return { neverReplied, total, percentage: total === 0 ? 0 : (neverReplied / total) * 100 };
 }
 
@@ -514,7 +536,8 @@ export function revenueAtRisk(
   conversionRate: number = DEFAULT_OPTIONS.conversionRate,
   avgTicketValue: number = DEFAULT_OPTIONS.avgTicketValue
 ): RevenueAtRisk {
-  const zeroReplyLeads = conversations.filter((c) => firstResponseTime(c) === null).length;
+  // Lead-level, consistent with zeroReplyRate: only leads never replied to at all.
+  const zeroReplyLeads = zeroReplyRate(conversations).neverReplied;
   const atRiskLeads = zeroReplyLeads;
   return {
     zeroReplyLeads,
@@ -858,7 +881,11 @@ export interface ConversationSummary {
   startTime: number;
   firstLeadMessageTime: number | null;
   firstResponseMinutes: number | null;
-  status: 'replied' | 'delayed' | 'never';
+  /**
+   * 'never' = this lead got no reply in ANY conversation; 'unanswered' = this
+   * conversation got no reply but the lead was replied to in another session.
+   */
+  status: 'replied' | 'delayed' | 'unanswered' | 'never';
   messageCount: number;
 }
 
@@ -903,14 +930,21 @@ export interface AuditReport {
   conversations: ConversationSummary[];
 }
 
-function summarizeConversation(conv: Conversation): ConversationSummary {
+function summarizeConversation(conv: Conversation, chatEverReplied: boolean): ConversationSummary {
   const frt = firstResponseTime(conv);
   return {
     chatJid: conv.chatJid,
     startTime: conv.startTime,
     firstLeadMessageTime: conv.firstLeadMessage?.timestamp ?? null,
     firstResponseMinutes: frt,
-    status: frt === null ? 'never' : frt > 15 ? 'delayed' : 'replied',
+    status:
+      frt !== null
+        ? frt > 15
+          ? 'delayed'
+          : 'replied'
+        : chatEverReplied
+          ? 'unanswered'
+          : 'never',
     messageCount: conv.messages.length,
   };
 }
@@ -995,6 +1029,9 @@ export function computeAllAuditMetrics(
       resolved.conversionRate,
       resolved.avgTicketValue
     ),
-    conversations: leads.map(summarizeConversation),
+    conversations: (() => {
+      const replied = chatsEverReplied(leads);
+      return leads.map((c) => summarizeConversation(c, replied.has(c.chatJid ?? '')));
+    })(),
   };
 }
