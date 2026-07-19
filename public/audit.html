@@ -379,11 +379,12 @@
   .ah-timeline { margin: 16px 0 0; }
   .ah-timeline-track {
     position: relative;
-    height: 96px;
+    height: 110px;
+    margin-top: 24px;
     background: #0f1011;
     border: 1px solid var(--border-soft);
     border-radius: 8px;
-    overflow: hidden;
+    overflow: visible;
   }
   .ah-timeline-band {
     position: absolute;
@@ -397,6 +398,17 @@
     position: absolute;
     bottom: 0;
     border-radius: 3px 3px 0 0;
+  }
+  .ah-timeline-count {
+    position: absolute;
+    bottom: 100%;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    padding-bottom: 3px;
   }
   .ah-timeline-labels {
     position: relative;
@@ -962,9 +974,16 @@
       bar.style.left = (z.start / 24 * 100) + '%';
       bar.style.width = ((z.end - z.start) / 24 * 100) + '%';
       if (z.after) {
-        bar.style.height = (z.count === 0 ? 3 : Math.max(Math.round(z.count / maxCount * 78), 8)) + 'px';
+        var h = z.count === 0 ? 3 : Math.max(Math.round(z.count / maxCount * 78), 8);
+        bar.style.height = h + 'px';
         bar.style.background = 'rgba(113, 112, 255, 0.65)';
         bar.title = z.label + ': ' + z.count + ' lead' + (z.count === 1 ? '' : 's');
+        if (z.count > 0) {
+          var lbl = el('span', 'ah-timeline-count', String(z.count));
+          lbl.style.left = (z.start / 24 * 100) + '%';
+          lbl.style.width = ((z.end - z.start) / 24 * 100) + '%';
+          track.appendChild(lbl);
+        }
       } else {
         bar.style.height = '8px';
         bar.style.background = 'rgba(138, 143, 152, 0.25)';
@@ -985,7 +1004,7 @@
       { h: 24, t: '12am', edge: 'edge-r' }
     ].forEach(function (m) {
       var span = el('span',
-        'ah-timeline-hours' + (m.edge ? ' ' + m.edge : '') + (m.boundary ? ' boundary' : ''),
+        (m.edge ? m.edge : '') + (m.boundary ? ' boundary' : ''),
         m.t);
       span.style.left = (m.h / 24 * 100) + '%';
       labels.appendChild(span);
