@@ -1,58 +1,70 @@
 # WhatsApp History Reader — Clinic Lead Auditor
 
-Read-only WhatsApp chat history reader for auditing clinic leads: pair with the clinic's WhatsApp number, sync chat history into SQLite, then browse and search it offline. Never sends messages.
+Read-only tool: pair with a clinic's WhatsApp number, sync chat history into a local SQLite file, browse it, and run lead-conversion audits on it. It never sends a message.
 
-**Stack:** Baileys 7 (rc) · better-sqlite3 · Express · single-page UI. Server runs on port 3000.
+## Run it
 
-## Run
+Requires Node 20+.
 
 ```bash
 npm install
-
-npm run dev -- offline        # serve the local DB only — no WhatsApp connection
-npm run dev -- 919876543210   # pair via code (digits, country code first) and sync
-npm run dev                   # pair via QR (open /qr) and sync
+npm run dev -- 919876543210     # your clinic's number: digits only, country code first
 ```
 
-UI at http://localhost:3000. Pairing codes expire in ~2 minutes and are only issued once per process start — restart to get a fresh one (`GET /api/pairing-code`).
+Then pair the phone:
 
-## What the auditor shows
+1. Get the pairing code: `curl localhost:3000/api/pairing-code` (also printed in the terminal).
+2. On the clinic phone: **WhatsApp → Settings → Linked Devices → Link a Device → Link with phone number instead** → enter the code.
+3. Codes expire in ~2 minutes and are issued once per process — if it says "device cannot connect", restart the server for a fresh code.
+4. Wait for the terminal to show `History sync batch` lines. A few thousand messages take under a minute.
 
-- **Personal chats only** — groups are stored but excluded from the list, search, and stats.
-- **Sender phone numbers** — WhatsApp increasingly hides numbers behind `@lid` aliases; the app resolves them via Baileys' alt-key fields, contact records, and a persisted `lid_map`, so every lead shows a real number.
-- **Hide saved contacts** toggle — most clinics don't save patient numbers, so unsaved senders ≈ leads. Off by default: clinics that do save patients aren't filtered out. "Saved" means an address-book name (`saved_name`), not a push name.
-- **Deleted-message markers** — revoked messages are kept as `deleted` rows (an audit signal), while protocol noise and system events are dropped.
-- **Edited messages** — WhatsApp `MESSAGE_EDIT` wrappers are unwrapped; the edited text is applied to the original message, or kept standalone if the original isn't stored.
+Open **http://localhost:3000** — chat list, search, "Hide saved contacts" filter.
 
-## API
-
-| Route | Purpose |
-|---|---|
-| `/api/chats` | Chat list with `display_name`, `chat_pn`, `is_saved` |
-| `/api/chats/:jid/messages` | Messages (paged), incl. `sender_pn` |
-| `/api/search?q=` | Full-text-ish search across personal chats |
-| `/api/stats` | Counts and date range (personal chats only) |
-| `/api/qr`, `/api/pairing-code` | Connection status, pairing |
-
-## Scripts
+### When you're done syncing
 
 ```bash
-npx tsx scripts/backfill-lid-map.ts   # import LID→PN mappings from ./auth_state into lid_map, fill messages.sender_pn
-npx tsx scripts/cleanup-noise.ts      # one-time purge of protocol/stub rows already in the DB
-npx tsx scripts/logout.ts             # connect once, de-register the linked device, delete ./auth_state
+npx tsx scripts/logout.ts       # unlinks the device from the WhatsApp account, deletes ./auth_state
 ```
 
-Run the logout script (or unlink from the phone) when a sync session is done — don't leave an unofficial client linked long-term.
+Do this rather than leaving an unofficial client linked — reduces ban risk. The synced data stays in `whatsapp.db`.
 
-## Data (`./whatsapp.db`)
+### Browse later, without WhatsApp
 
-- `messages` — id, chat_jid, sender_jid, **sender_pn**, sender_name, text, type, timestamp, raw_json
-- `chats` — id, name, timestamps; names for individual chats resolve through contacts at query time
-- `contacts` — id, **saved_name** (address book) vs **push_name**, lid, pn
-- `lid_map` — LID digits → phone digits, fed by contact records, message keys, and the backfill script
+```bash
+npm run dev -- offline          # serves whatever is already in whatsapp.db, no connection
+```
 
-## Known gaps
+## Run the audit
 
-- **Full history isn't synced yet.** Baileys' default `shouldSyncHistoryMessage` skips `FULL` sync chunks even with `syncFullHistory: true` — only the recent bootstrap is stored. Fix: pass `shouldSyncHistoryMessage: () => true` to `makeWASocket` in `src/connection.ts`, then pair fresh (WhatsApp won't re-send chunks it already delivered).
-- **`is_saved` is only accurate for data synced after the saved/push name split** (2026-07-18). Earlier contact rows conflated both names; a re-sync corrects them.
-- Prototype quality throughout (see `SPIKE` markers): no auth on the HTTP server, no tests — run it locally only.
+With the server up (either mode), open **http://localhost:3000/audit.html**.
+
+API: `GET /api/audit` (all chats) or `/api/audit/<chatJid>` (one chat). Query params:
+
+- `startHour`, `endHour`, `daysOfWeek=1,2,3,4,5` — clinic business hours (defaults built in)
+- `conversionRate`, `avgTicketValue` — for revenue-at-risk estimates
+- `range=30d|90d|1y` — analysis window
+
+Example: `curl 'localhost:3000/api/audit?startHour=9&endHour=19&avgTicketValue=2000&range=90d'`
+
+## Tests / typecheck
+
+```bash
+npx tsx --test tests/auditor.test.ts    # plain `node --test` can't resolve the .js imports
+npx tsc --noEmit
+```
+
+## One-time maintenance scripts
+
+```bash
+npx tsx scripts/backfill-lid-map.ts   # fill messages.sender_pn from auth_state LID↔phone mappings
+npx tsx scripts/cleanup-noise.ts      # purge protocol/system rows synced before the ingest filters existed
+```
+
+Both already ran on the current DB; only needed again after a fresh sync from scratch.
+
+## Gotchas
+
+- **Full history doesn't sync yet.** Baileys skips `FULL` history chunks by default even with `syncFullHistory: true` — you only get recent messages. Fix before the next pairing: pass `shouldSyncHistoryMessage: () => true` to `makeWASocket` in `src/connection.ts`.
+- The "Hide saved contacts" filter keys off address-book names, which are only captured on syncs after 2026-07-18. Older contact rows all count as unsaved.
+- `whatsapp.db` (patient chats) and `auth_state/` (session keys) are gitignored — keep it that way.
+- Prototype: no auth on the HTTP server. Run locally only.
