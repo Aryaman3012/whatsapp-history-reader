@@ -40,7 +40,7 @@ export const DEFAULT_OPTIONS: ResolvedMetricOptions = {
   conversionRate: 0.2,
   avgTicketValue: 1300,
   secondsPerMessage: 75,
-  gapThresholdMinutes: 180,
+  gapThresholdMinutes: 18 * 60,
 };
 
 export function resolveOptions(options: MetricOptions = {}): ResolvedMetricOptions {

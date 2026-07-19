@@ -48,6 +48,21 @@ test('firstResponseTime: null when no reply', () => {
   assert.equal(firstResponseTime(c), null);
 });
 
+test('firstResponseTime: reply in a later session still counts (never = literally never)', () => {
+  // Lead messages, clinic replies 20h later — past the 18h gap, so two sessions.
+  const convs = groupMessagesIntoConversations([msg(0, 0), msg(20 * 60, 1)]);
+  assert.equal(convs.length, 2);
+  assert.equal(convs[0].isLeadConversation, true);
+  assert.equal(firstResponseTime(convs[0]), 20 * 60);
+});
+
+test('sessions split on the 18h default gap', () => {
+  const oneSession = groupMessagesIntoConversations([msg(0, 0), msg(17 * 60, 0)]);
+  assert.equal(oneSession.length, 1);
+  const twoSessions = groupMessagesIntoConversations([msg(0, 0), msg(19 * 60, 0)]);
+  assert.equal(twoSessions.length, 2);
+});
+
 test('zeroReplyRate: 0% when all replied', () => {
   const convs = [conv([msg(0, 0), msg(3, 1)]), conv([msg(0, 0), msg(8, 1)])];
   const rate = zeroReplyRate(convs);

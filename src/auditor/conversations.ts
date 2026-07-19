@@ -24,11 +24,12 @@ export interface Conversation {
   isLeadConversation: boolean;
 }
 
-const DEFAULT_GAP_THRESHOLD_MINUTES = 180;
+const DEFAULT_GAP_THRESHOLD_MINUTES = 18 * 60;
 
 /**
  * Groups messages from a SINGLE chat into conversation sessions. A gap of more
- * than gapThresholdMinutes between consecutive messages starts a new session.
+ * than gapThresholdMinutes (default 18h) between consecutive messages starts a
+ * new session.
  */
 export function groupMessagesIntoConversations(
   messages: AuditMessage[],
@@ -50,15 +51,20 @@ export function groupMessagesIntoConversations(
   }
   sessions.push(current);
 
-  return sessions.map(buildConversation);
+  return sessions.map((msgs) => buildConversation(msgs, sorted));
 }
 
-function buildConversation(msgs: AuditMessage[]): Conversation {
+function buildConversation(msgs: AuditMessage[], allChatMessages: AuditMessage[]): Conversation {
   const leadMessages = msgs.filter((m) => m.is_from_me === 0);
   const clinicMessages = msgs.filter((m) => m.is_from_me === 1);
   const firstLeadMessage = leadMessages[0] ?? null;
+  // First clinic message after the lead's first message ANYWHERE in the chat,
+  // not just inside this session — "never replied" must mean literally never,
+  // not "no reply before the session gap".
   const firstClinicReply = firstLeadMessage
-    ? clinicMessages.find((m) => m.timestamp >= firstLeadMessage.timestamp) ?? null
+    ? allChatMessages.find(
+        (m) => m.is_from_me === 1 && m.timestamp >= firstLeadMessage.timestamp
+      ) ?? null
     : null;
   return {
     chatJid: msgs[0].chat_jid ?? null,
