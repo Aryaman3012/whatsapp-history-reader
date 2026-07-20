@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Free WhatsApp Lead Audit for Clinics</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --dim: #8b949e; --accent: #2ea043; --blue: #58a6ff; --red: #f85149;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card { width: 100%; max-width: 520px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 32px; }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  .sub { color: var(--dim); font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+  label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 6px; }
+  input[type=tel] {
+    width: 100%; padding: 12px 14px; font-size: 16px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  input[type=tel]:focus { border-color: var(--accent); }
+  button {
+    width: 100%; margin-top: 16px; padding: 12px; font-size: 15px; font-weight: 600;
+    background: var(--accent); color: #fff; border: none; border-radius: 8px; cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--dim); font-weight: 400; }
+  .step { display: none; }
+  .step.active { display: block; }
+  .code {
+    font-family: "SF Mono", Menlo, monospace; font-size: 34px; font-weight: bold;
+    letter-spacing: 5px; color: var(--blue); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 18px; text-align: center; margin: 16px 0;
+  }
+  .hint { font-size: 13px; color: var(--dim); line-height: 1.6; }
+  .hint b { color: var(--text); }
+  .progress-track { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; height: 14px; overflow: hidden; margin: 16px 0 8px; }
+  .progress-fill { background: var(--accent); height: 100%; width: 0%; transition: width 0.6s ease; }
+  .stats-line { font-size: 13px; color: var(--dim); font-family: "SF Mono", Menlo, monospace; }
+  .error { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .privacy {
+    margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--dim); line-height: 1.6;
+  }
+  .privacy b { color: var(--text); }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); margin-right: 6px; }
+  .status-dot.on { background: var(--accent); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Free WhatsApp Lead Audit</h1>
+  <p class="sub">See how many patient enquiries your clinic misses on WhatsApp — response times, after-hours leads, and the revenue at stake. Read-only: we never send a message.</p>
+
+  <div id="step-phone" class="step active">
+    <label for="phone">Clinic WhatsApp number (country code first, digits only)</label>
+    <input id="phone" type="tel" placeholder="9715XXXXXXXX" autocomplete="tel">
+    <button id="start-btn">Get pairing code</button>
+    <div id="phone-error" class="error"></div>
+  </div>
+
+  <div id="step-pair" class="step">
+    <p class="hint">On the clinic phone: <b>WhatsApp → Settings → Linked Devices → Link a Device → Link with phone number instead</b>, then enter:</p>
+    <div class="code" id="pairing-code">········</div>
+    <p class="hint" id="pair-status"><span class="status-dot"></span>Waiting for you to enter the code… (codes expire in ~2 minutes — reload to get a fresh one)</p>
+    <div id="pair-error" class="error"></div>
+  </div>
+
+  <div id="step-sync" class="step">
+    <p class="hint"><span class="status-dot on"></span><b>Connected.</b> Syncing your chat history — this stays on this server only and is deleted automatically.</p>
+    <div class="progress-track"><div class="progress-fill" id="sync-fill"></div></div>
+    <div class="stats-line" id="sync-stats">0 chats · 0 messages</div>
+    <button id="audit-btn" disabled>Open my audit</button>
+  </div>
+
+  <div class="privacy">
+    <b>Your data:</b> the pairing is read-only and temporary. The linked device is automatically
+    unlinked and <b>all synced data is permanently deleted after 2 hours</b> (or immediately, below).
+    Nothing is shared, and no messages are ever sent from your account.
+    <button id="delete-btn" class="secondary" style="display:none; margin-top:12px;">Unlink &amp; delete my data now</button>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let sid = null;
+let pollTimer = null;
+let sawSync = false;
+
+function show(step) {
+  document.querySelectorAll('.step').forEach((el) => el.classList.remove('active'));
+  $(step).classList.add('active');
+}
+
+$('start-btn').addEventListener('click', async () => {
+  const phone = $('phone').value.replace(/[^\d]/g, '');
+  $('phone-error').textContent = '';
+  if (phone.length < 8 || phone.length > 15) {
+    $('phone-error').textContent = 'Enter the number with country code, e.g. 9715XXXXXXXX.';
+    return;
+  }
+  $('start-btn').disabled = true;
+  try {
+    const res = await fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to start.');
+    sid = data.sid;
+    $('delete-btn').style.display = 'block';
+    show('step-pair');
+    pollTimer = setInterval(poll, 2500);
+    poll();
+  } catch (e) {
+    $('phone-error').textContent = e.message;
+    $('start-btn').disabled = false;
+  }
+});
+
+async function poll() {
+  if (!sid) return;
+  try {
+    const res = await fetch('/api/session/' + encodeURIComponent(sid));
+    if (res.status === 404) {
+      clearInterval(pollTimer);
+      $('pair-error').textContent = 'Session expired and its data was deleted. Reload to start over.';
+      return;
+    }
+    const s = await res.json();
+    if (s.pairingCode && !s.connected) {
+      const c = s.pairingCode;
+      $('pairing-code').textContent = c.length === 8 ? c.slice(0, 4) + '-' + c.slice(4) : c;
+    }
+    if (s.connected || (s.stats && s.stats.totalMessages > 0)) {
+      show('step-sync');
+      sawSync = true;
+      const st = s.stats || {};
+      $('sync-stats').textContent = (st.totalChats || 0) + ' chats · ' + (st.totalMessages || 0) + ' messages';
+      const p = s.syncProgress;
+      $('sync-fill').style.width = (p == null ? (st.totalMessages ? 15 : 5) : Math.max(5, p)) + '%';
+      if (p >= 100 || (st.totalMessages || 0) > 0) {
+        $('audit-btn').disabled = false;
+      }
+      if (p >= 100) {
+        $('sync-fill').style.width = '100%';
+      }
+    }
+  } catch (e) { /* transient */ }
+}
+
+$('audit-btn').addEventListener('click', () => {
+  window.location.href = '/audit.html?sid=' + encodeURIComponent(sid);
+});
+
+$('delete-btn').addEventListener('click', async () => {
+  if (!sid) return;
+  $('delete-btn').disabled = true;
+  $('delete-btn').textContent = 'Unlinking…';
+  try {
+    await fetch('/api/session/' + encodeURIComponent(sid), { method: 'DELETE' });
+  } finally {
+    clearInterval(pollTimer);
+    sid = null;
+    $('delete-btn').textContent = 'Unlinked — all data deleted.';
+    show('step-phone');
+    $('start-btn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>

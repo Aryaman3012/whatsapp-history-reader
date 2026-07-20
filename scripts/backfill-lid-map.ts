@@ -3,7 +3,7 @@
 // Run: npx tsx scripts/backfill-lid-map.ts
 import fs from 'node:fs';
 import path from 'node:path';
-import { initStore, upsertLidMappingsBulk, backfillSenderPn } from '../src/store.js';
+import { Store } from '../src/store.js';
 
 const AUTH_DIR = './auth_state';
 
@@ -18,9 +18,9 @@ for (const file of fs.readdirSync(AUTH_DIR)) {
   }
 }
 
-initStore('./whatsapp.db');
-const inserted = upsertLidMappingsBulk(pairs);
+const store = new Store('./whatsapp.db');
+const inserted = store.upsertLidMappingsBulk(pairs);
 console.log(`[backfill] Loaded ${inserted} LID→PN mappings from ${AUTH_DIR}.`);
 
-const { fromPnJid, fromLidMap } = backfillSenderPn();
+const { fromPnJid, fromLidMap } = store.backfillSenderPn();
 console.log(`[backfill] sender_pn filled: ${fromPnJid} from PN jids, ${fromLidMap} via lid_map.`);

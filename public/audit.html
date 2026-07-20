@@ -1350,7 +1350,9 @@
     document.getElementById('error').style.display = 'none';
     document.getElementById('dashboard').style.display = 'none';
     document.getElementById('loading').style.display = 'block';
-    fetch('/api/audit?range=' + encodeURIComponent(range))
+    var sidParam = new URLSearchParams(location.search).get('sid');
+    fetch('/api/audit?range=' + encodeURIComponent(range) +
+        (sidParam ? '&sid=' + encodeURIComponent(sidParam) : ''))
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();

@@ -2,6 +2,8 @@
 
 Read-only tool: pair with a clinic's WhatsApp number, sync chat history into a local SQLite file, browse it, and run lead-conversion audits on it. It never sends a message.
 
+Two ways to run it: **local mode** (your own machine, one number — below) and **serve mode** (the public free tool — see [Deploy the free tool](#deploy-the-free-tool)).
+
 ## Run it
 
 Requires Node 20+.
@@ -62,9 +64,36 @@ npx tsx scripts/cleanup-noise.ts      # purge protocol/system rows synced before
 
 Both already ran on the current DB; only needed again after a fresh sync from scratch.
 
+## Deploy the free tool
+
+Serve mode turns this into a multi-tenant public tool: each visiting clinic enters their number on `/`, gets a pairing code, syncs, and lands on their audit at `/audit.html?sid=…`.
+
+```bash
+docker build -t wa-lead-audit .
+docker run -d -p 3000:3000 --name wa-lead-audit wa-lead-audit
+# or without docker:
+npm ci && npm run build && node dist/index.js serve
+```
+
+Environment variables (defaults in parentheses):
+
+- `PORT` (3000)
+- `DATA_DIR` (`./data` / `/data` in Docker) — per-session SQLite + auth dirs live here
+- `SESSION_TTL_MIN` (120) — after this, the session's device is **logged out of WhatsApp and all its data is deleted**
+- `MAX_SESSIONS` (10) — concurrent paired sessions; each one is a linked device connecting from your server's IP, keep this conservative
+- `CREATES_PER_IP_PER_HOUR` (3) — session-creation rate limit
+
+How it stays safe(ish):
+
+- Every session gets an unguessable token; all data routes require it — there is no listing or cross-session path.
+- Sessions are ephemeral: TTL reaper (and SIGTERM shutdown, and boot) unlink the device and `rm -rf` the session dir. A "delete my data now" button does the same on demand.
+- Read-only Baileys usage — the tool never sends a WhatsApp message.
+
+Put it behind an HTTPS reverse proxy (Caddy/nginx) on the subdomain; the rate limiter reads `X-Forwarded-For`, so forward it.
+
 ## Gotchas
 
-- **Full history doesn't sync yet.** Baileys skips `FULL` history chunks by default even with `syncFullHistory: true` — you only get recent messages. Fix before the next pairing: pass `shouldSyncHistoryMessage: () => true` to `makeWASocket` in `src/connection.ts`.
+- **Full history syncs only on a fresh pairing.** The `shouldSyncHistoryMessage: () => true` override is in place, but WhatsApp won't re-send history chunks it already delivered to a device — data synced before the override (e.g. the local `whatsapp.db` from before 2026-07-19) stays partial until you re-pair.
 - The "Hide saved contacts" filter keys off address-book names, which are only captured on syncs after 2026-07-18. Older contact rows all count as unsaved.
 - `whatsapp.db` (patient chats) and `auth_state/` (session keys) are gitignored — keep it that way.
-- Prototype: no auth on the HTTP server. Run locally only.
+- Local mode has no auth on the HTTP server — run it locally only. Serve mode is session-token scoped and safe to expose behind HTTPS.

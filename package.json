@@ -6,7 +6,9 @@
   "description": "Read-only WhatsApp chat history reader prototype (Baileys + SQLite + Express)",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "start": "node dist/index.js serve",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",

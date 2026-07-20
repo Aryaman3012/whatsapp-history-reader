@@ -22,6 +22,12 @@ export interface Conversation {
   firstClinicReply: AuditMessage | null;
   /** True when the FIRST message of the session is from the lead (is_from_me = 0). */
   isLeadConversation: boolean;
+  /**
+   * True when the lead sent another message ANYWHERE in the chat after the
+   * clinic's first reply — session-bound checks miss leads who came back in a
+   * later session. False when there was no reply.
+   */
+  reEngagedAfterReply: boolean;
 }
 
 const DEFAULT_GAP_THRESHOLD_MINUTES = 18 * 60;
@@ -66,6 +72,11 @@ function buildConversation(msgs: AuditMessage[], allChatMessages: AuditMessage[]
         (m) => m.is_from_me === 1 && m.timestamp >= firstLeadMessage.timestamp
       ) ?? null
     : null;
+  const reEngagedAfterReply =
+    firstClinicReply !== null &&
+    allChatMessages.some(
+      (m) => m.is_from_me === 0 && m.timestamp > firstClinicReply.timestamp
+    );
   return {
     chatJid: msgs[0].chat_jid ?? null,
     startTime: msgs[0].timestamp,
@@ -76,6 +87,7 @@ function buildConversation(msgs: AuditMessage[], allChatMessages: AuditMessage[]
     firstLeadMessage,
     firstClinicReply,
     isLeadConversation: msgs[0].is_from_me === 0,
+    reEngagedAfterReply,
   };
 }
 

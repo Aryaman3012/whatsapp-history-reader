@@ -93,6 +93,57 @@ test('zeroReplyRate: 50% when half the leads replied', () => {
   assert.equal(rate.percentage, 50);
 });
 
+test('responseDelayDropoff: cross-session reply + comeback counts as re-engaged', () => {
+  // Priya: message Tue, no reply; bumps 47h later; clinic replies; she books.
+  const convs = groupMessagesIntoConversations([
+    chatMsg('priya@lid', 0, 0),
+    chatMsg('priya@lid', 47 * 60, 0),
+    chatMsg('priya@lid', 47 * 60 + 15, 1),
+    chatMsg('priya@lid', 47 * 60 + 20, 0),
+  ]);
+  assert.equal(convs.length, 2);
+  // Session A's reply is in session B (delayed 47h+) — she still re-engaged.
+  const dropoff = responseDelayDropoff([convs[0]]);
+  assert.equal(dropoff.delayedConversations, 1);
+  assert.equal(dropoff.reEngaged, 1);
+  assert.equal(dropoff.wentSilent, 0);
+});
+
+test('responseDelayDropoff: re-engagement in a later session after in-session delayed reply', () => {
+  // Dr Ajay shape: delayed in-session reply ends session A; lead returns in session B.
+  const convs = groupMessagesIntoConversations([
+    chatMsg('ajay@lid', 0, 0),
+    chatMsg('ajay@lid', 30, 1), // 30min reply — delayed, last message of session A
+    chatMsg('ajay@lid', 48 * 60, 0), // comes back two days later
+  ]);
+  assert.equal(convs.length, 2);
+  const dropoff = responseDelayDropoff([convs[0]]);
+  assert.equal(dropoff.reEngaged, 1);
+  assert.equal(dropoff.wentSilent, 0);
+});
+
+test('afterHoursRevenueAtRisk: one patient with repeated ignored after-hours messages counts once', () => {
+  // Rahul: three after-hours bursts (Sat 21:00, Mon 20:30, Fri 22:00), never replied.
+  const sat9pm = new Date(2026, 0, 10, 21, 0, 0).getTime() / 1000;
+  const rahul = (offsetH: number): AuditMessage => ({
+    timestamp: sat9pm + offsetH * 3600,
+    is_from_me: 0,
+    message_text: 'do you do braces?',
+    chat_jid: 'rahul@lid',
+  });
+  const convs = groupMessagesIntoConversations([rahul(0), rahul(47.5), rahul(6 * 24 + 1)]);
+  assert.equal(convs.length, 3);
+  const rar = afterHoursRevenueAtRisk(convs, 0.2, 1300, {
+    startHour: 9,
+    endHour: 19,
+    daysOfWeek: [1, 2, 3, 4, 5, 6],
+  });
+  assert.equal(rar.afterHoursZeroReply, 1);
+  assert.equal(rar.revenueAtRisk, 1 * 0.2 * 1300);
+  const recover = instantReplyRecoverable(convs, { startHour: 9, endHour: 19, daysOfWeek: [1, 2, 3, 4, 5, 6] }, 0.2, 1300);
+  assert.equal(recover.lostCohort, 1);
+});
+
 test('zeroReplyRate: lead-level across sessions — one replied session clears the lead', () => {
   // Same lead: session 1 replied, session 2 (>18h later) unanswered.
   const convs = groupMessagesIntoConversations([
@@ -223,14 +274,14 @@ function at(day: number, hour: number, minute = 0): number {
   return new Date(2026, 0, day, hour, minute, 0).getTime() / 1000;
 }
 
-function msgAt(ts: number, fromMe: 0 | 1, text = 'hello'): AuditMessage {
-  return { timestamp: ts, is_from_me: fromMe, message_text: text, chat_jid: 'lead@s.whatsapp.net' };
+function msgAt(ts: number, fromMe: 0 | 1, text = 'hello', chatJid = 'lead@s.whatsapp.net'): AuditMessage {
+  return { timestamp: ts, is_from_me: fromMe, message_text: text, chat_jid: chatJid };
 }
 
 test('afterHoursRevenueAtRisk: only after-hours zero-reply leads count', () => {
-  const ahNoReply = conv([msgAt(at(5, 22), 0)]); // Monday 22:00, never replied
-  const ahReplied = conv([msgAt(at(5, 20), 0), msgAt(at(5, 20, 10), 1)]); // Monday 20:00, replied
-  const inHoursNoReply = conv([msgAt(at(5, 10), 0)]); // Monday 10:00, never replied — excluded
+  const ahNoReply = conv([msgAt(at(5, 22), 0, 'hi', 'a@lid')]); // Monday 22:00, never replied
+  const ahReplied = conv([msgAt(at(5, 20), 0, 'hi', 'b@lid'), msgAt(at(5, 20, 10), 1, 'hi', 'b@lid')]); // Monday 20:00, replied
+  const inHoursNoReply = conv([msgAt(at(5, 10), 0, 'hi', 'c@lid')]); // Monday 10:00, never replied — excluded
   const result = afterHoursRevenueAtRisk([ahNoReply, ahReplied, inHoursNoReply], 0.2, 1000, HOURS);
   assert.equal(result.afterHoursZeroReply, 1);
   assert.equal(result.afterHoursTotal, 2);
@@ -294,13 +345,13 @@ test('afterHoursTimeBuckets: classifies hours into the right buckets', () => {
 
 test('instantReplyRecoverable: arithmetic with the small-sample assumption', () => {
   // Two during-hours fast replies (sample < 5 → 0.80 benchmark assumed).
-  const fast1 = conv([msgAt(at(5, 10), 0), msgAt(at(5, 10, 2), 1)]);
-  const fast2 = conv([msgAt(at(5, 11), 0), msgAt(at(5, 11, 3), 1)]);
-  // Two after-hours leads never replied → lost cohort.
-  const lost1 = conv([msgAt(at(5, 22), 0)]);
-  const lost2 = conv([msgAt(at(5, 23), 0)]);
+  const fast1 = conv([msgAt(at(5, 10), 0, 'hi', 'f1@lid'), msgAt(at(5, 10, 2), 1, 'hi', 'f1@lid')]);
+  const fast2 = conv([msgAt(at(5, 11), 0, 'hi', 'f2@lid'), msgAt(at(5, 11, 3), 1, 'hi', 'f2@lid')]);
+  // Two after-hours leads (distinct patients) never replied → lost cohort.
+  const lost1 = conv([msgAt(at(5, 22), 0, 'hi', 'l1@lid')]);
+  const lost2 = conv([msgAt(at(5, 23), 0, 'hi', 'l2@lid')]);
   // After-hours lead replied instantly, no re-engagement → replied cohort, not lost.
-  const ahReplied = conv([msgAt(at(5, 20), 0), msgAt(at(5, 20, 5), 1)]);
+  const ahReplied = conv([msgAt(at(5, 20), 0, 'hi', 'r1@lid'), msgAt(at(5, 20, 5), 1, 'hi', 'r1@lid')]);
   const result = instantReplyRecoverable(
     [fast1, fast2, lost1, lost2, ahReplied],
     HOURS,

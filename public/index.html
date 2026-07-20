@@ -406,7 +406,11 @@ function senderLabel(m) {
   return name || pn || (m.sender_jid || '').replace(/@.*$/, '');
 }
 
+// Session-scoped in serve mode: forward ?sid= to every API call.
+const SID = new URLSearchParams(location.search).get('sid');
+
 async function fetchJSON(url) {
+  if (SID) url += (url.includes('?') ? '&' : '?') + 'sid=' + encodeURIComponent(SID);
   const res = await fetch(url);
   if (!res.ok) throw new Error(url + ' -> ' + res.status);
   return res.json();

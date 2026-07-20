@@ -203,11 +203,7 @@ export function responseDelayDropoff(conversations: Conversation[]): ResponseDel
     const frt = firstResponseTime(c);
     return frt !== null && frt > 15;
   });
-  let reEngaged = 0;
-  for (const conv of delayed) {
-    const replyTs = conv.firstClinicReply!.timestamp;
-    if (conv.leadMessages.some((m) => m.timestamp > replyTs)) reEngaged++;
-  }
+  const reEngaged = delayed.filter((c) => c.reEngagedAfterReply).length;
   const wentSilent = delayed.length - reEngaged;
   const total = delayed.length;
   return {
@@ -363,6 +359,10 @@ export interface ResponseTimeVariance {
    * UNCONDITIONAL statistics: percentiles over every lead conversation, with
    * never-replied conversations treated as an infinite response time. This is
    * the honest "how long does a lead wait" metric.
+   *
+   * NOTE: session-level by design (a distribution over conversations), so
+   * neverRepliedCount/Percent here will exceed the lead-level summary.zeroReply
+   * numbers — do not present the two as the same statistic.
    */
   effective: {
     p50: EffectivePercentile;
@@ -657,7 +657,12 @@ export interface AfterHoursRevenueAtRisk {
   revenueAtRisk: number;
 }
 
-/** Revenue at risk from after-hours leads that never got a reply. */
+/**
+ * Revenue at risk from after-hours leads that never got a reply. Lead-level
+ * and consistent with zeroReplyRate: unique patients (chats) with at least one
+ * after-hours-initiated conversation who were never replied to at all — one
+ * patient messaging three times is one lost patient, not three.
+ */
 export function afterHoursRevenueAtRisk(
   conversations: Conversation[],
   conversionRate: number,
@@ -665,10 +670,12 @@ export function afterHoursRevenueAtRisk(
   businessHours: BusinessHours
 ): AfterHoursRevenueAtRisk {
   const afterHours = afterHoursLeads(conversations, businessHours);
-  const afterHoursZeroReply = afterHours.filter((c) => firstResponseTime(c) === null).length;
+  const everReplied = chatsEverReplied(conversations);
+  const afterHoursChats = new Set(afterHours.map((c) => c.chatJid ?? ''));
+  const afterHoursZeroReply = [...afterHoursChats].filter((jid) => !everReplied.has(jid)).length;
   return {
     afterHoursZeroReply,
-    afterHoursTotal: afterHours.length,
+    afterHoursTotal: afterHoursChats.size,
     conversionRate,
     avgTicketValue,
     revenueAtRisk: afterHoursZeroReply * conversionRate * avgTicketValue,
@@ -817,10 +824,6 @@ export interface InstantReplyRecoverable {
   recoverableRevenue: number;
 }
 
-function reEngaged(conv: Conversation): boolean {
-  const replyTs = conv.firstClinicReply!.timestamp;
-  return conv.leadMessages.some((m) => m.timestamp > replyTs);
-}
 
 /**
  * Estimates bookings/revenue an instant after-hours reply would recover, using
@@ -842,20 +845,26 @@ export function instantReplyRecoverable(
   const assumptionUsed = fastReplySampleSize < 5;
   const fastReplyReEngagementRate = assumptionUsed
     ? DEFAULT_FAST_REPLY_RE_ENGAGEMENT_RATE
-    : duringHoursFast.filter(reEngaged).length / fastReplySampleSize;
+    : duringHoursFast.filter((c) => c.reEngagedAfterReply).length / fastReplySampleSize;
 
+  // Unique patients (chats): one lead with three slow after-hours sessions is
+  // one recoverable lead, not three.
   const afterHours = afterHoursLeads(conversations, businessHours);
-  const lostCohort = afterHours.filter((c) => {
-    if (firstResponseTime(c) === null) return true;
-    const open = nextBusinessOpenTimestamp(c.firstLeadMessage!.timestamp, businessHours);
-    return c.firstClinicReply!.timestamp > open + 3600;
-  }).length;
+  const lostCohort = new Set(
+    afterHours
+      .filter((c) => {
+        if (firstResponseTime(c) === null) return true;
+        const open = nextBusinessOpenTimestamp(c.firstLeadMessage!.timestamp, businessHours);
+        return c.firstClinicReply!.timestamp > open + 3600;
+      })
+      .map((c) => c.chatJid ?? '')
+  ).size;
 
   const afterHoursReplied = afterHours.filter((c) => firstResponseTime(c) !== null);
   const actualAfterHoursReEngagementRate =
     afterHoursReplied.length === 0
       ? 0
-      : afterHoursReplied.filter(reEngaged).length / afterHoursReplied.length;
+      : afterHoursReplied.filter((c) => c.reEngagedAfterReply).length / afterHoursReplied.length;
 
   const recoverableLeads =
     lostCohort * Math.max(0, fastReplyReEngagementRate - actualAfterHoursReEngagementRate);
