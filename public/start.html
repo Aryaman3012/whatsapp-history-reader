@@ -60,16 +60,29 @@
   <p class="sub">See how many patient enquiries your clinic misses on WhatsApp — response times, after-hours leads, and the revenue at stake. Read-only: we never send a message.</p>
 
   <div id="step-phone" class="step active">
-    <label for="phone">Clinic WhatsApp number (country code first, digits only)</label>
-    <input id="phone" type="tel" placeholder="9715XXXXXXXX" autocomplete="tel">
-    <button id="start-btn">Get pairing code</button>
+    <button id="start-qr-btn">Show QR code to scan</button>
+    <p class="hint" style="text-align:center; margin-top:14px;">
+      <a href="#" id="toggle-code" style="color:var(--blue);">Can't scan? Use a pairing code instead</a>
+    </p>
+    <div id="code-form" style="display:none; margin-top:14px;">
+      <label for="phone">Clinic WhatsApp number (country code first, digits only)</label>
+      <input id="phone" type="tel" placeholder="9715XXXXXXXX" autocomplete="tel">
+      <button id="start-btn">Get pairing code</button>
+    </div>
     <div id="phone-error" class="error"></div>
   </div>
 
   <div id="step-pair" class="step">
-    <p class="hint">On the clinic phone: <b>WhatsApp → Settings → Linked Devices → Link a Device → Link with phone number instead</b>, then enter:</p>
-    <div class="code" id="pairing-code">········</div>
-    <p class="hint" id="pair-status"><span class="status-dot"></span>Waiting for you to enter the code… (codes expire in ~2 minutes — reload to get a fresh one)</p>
+    <div id="qr-block" style="display:none; text-align:center;">
+      <p class="hint">On the clinic phone: <b>WhatsApp → Settings → Linked Devices → Link a Device</b>, then scan:</p>
+      <img id="qr-img" width="260" height="260" alt="WhatsApp QR code"
+           style="background:#fff; padding:10px; border-radius:8px; margin:16px 0;">
+    </div>
+    <div id="code-block" style="display:none;">
+      <p class="hint">On the clinic phone: <b>WhatsApp → Settings → Linked Devices → Link a Device → Link with phone number instead</b>, then enter:</p>
+      <div class="code" id="pairing-code">········</div>
+    </div>
+    <p class="hint" id="pair-status"><span class="status-dot"></span>Waiting for the link… (QR and codes expire after a couple of minutes — reload for a fresh one)</p>
     <div id="pair-error" class="error"></div>
   </div>
 
@@ -99,6 +112,43 @@ function show(step) {
   $(step).classList.add('active');
 }
 
+let usingQR = false;
+
+$('toggle-code').addEventListener('click', (e) => {
+  e.preventDefault();
+  const form = $('code-form');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+});
+
+async function createSession(phone) {
+  const res = await fetch('/api/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(phone ? { phone } : {}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to start.');
+  sid = data.sid;
+  $('delete-btn').style.display = 'block';
+  $('qr-block').style.display = usingQR ? 'block' : 'none';
+  $('code-block').style.display = usingQR ? 'none' : 'block';
+  show('step-pair');
+  pollTimer = setInterval(poll, 2500);
+  poll();
+}
+
+$('start-qr-btn').addEventListener('click', async () => {
+  $('phone-error').textContent = '';
+  $('start-qr-btn').disabled = true;
+  usingQR = true;
+  try {
+    await createSession(null);
+  } catch (e) {
+    $('phone-error').textContent = e.message;
+    $('start-qr-btn').disabled = false;
+  }
+});
+
 $('start-btn').addEventListener('click', async () => {
   const phone = $('phone').value.replace(/[^\d]/g, '');
   $('phone-error').textContent = '';
@@ -107,19 +157,9 @@ $('start-btn').addEventListener('click', async () => {
     return;
   }
   $('start-btn').disabled = true;
+  usingQR = false;
   try {
-    const res = await fetch('/api/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to start.');
-    sid = data.sid;
-    $('delete-btn').style.display = 'block';
-    show('step-pair');
-    pollTimer = setInterval(poll, 2500);
-    poll();
+    await createSession(phone);
   } catch (e) {
     $('phone-error').textContent = e.message;
     $('start-btn').disabled = false;
@@ -139,6 +179,9 @@ async function poll() {
     if (s.pairingCode && !s.connected) {
       const c = s.pairingCode;
       $('pairing-code').textContent = c.length === 8 ? c.slice(0, 4) + '-' + c.slice(4) : c;
+    }
+    if (usingQR && s.hasQR && !s.connected) {
+      $('qr-img').src = '/qr.png?sid=' + encodeURIComponent(sid) + '&t=' + Date.now();
     }
     if (s.connected || (s.stats && s.stats.totalMessages > 0)) {
       show('step-sync');

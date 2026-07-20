@@ -63,8 +63,10 @@ export function startServer(port: number, opts: ServerOptions): void {
   // ---- Session lifecycle (serve mode only) --------------------------------
   if (opts.mode === 'serve') {
     app.post('/api/session', (req, res) => {
-      const phone = String(req.body?.phone ?? '').replace(/[^\d]/g, '');
-      if (!VALID_PHONE.test(phone)) {
+      // No phone → QR pairing; phone → pairing-code flow.
+      const rawPhone = String(req.body?.phone ?? '').replace(/[^\d]/g, '');
+      const phone = rawPhone === '' ? null : rawPhone;
+      if (phone !== null && !VALID_PHONE.test(phone)) {
         res.status(400).json({ error: 'Enter the WhatsApp number with country code, digits only (e.g. 9715XXXXXXXX).' });
         return;
       }
@@ -94,6 +96,7 @@ export function startServer(port: number, opts: ServerOptions): void {
         status: session.conn.getStatus(),
         connected: session.conn.isConnected(),
         pairingCode: session.conn.getPairingCode(),
+        hasQR: session.conn.getQR() !== null,
         syncProgress: session.conn.getSyncProgress(),
         stats: session.store.getStats(),
         expiresAt: null, // informational TTL is in the UI copy

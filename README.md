@@ -66,7 +66,9 @@ Both already ran on the current DB; only needed again after a fresh sync from sc
 
 ## Deploy the free tool
 
-Serve mode turns this into a multi-tenant public tool: each visiting clinic enters their number on `/`, gets a pairing code, syncs, and lands on their audit at `/audit.html?sid=…`.
+Serve mode turns this into a public tool: a visiting clinic scans a QR on `/` (or falls back to a pairing code), syncs, and lands on their audit at `/audit.html?sid=…`.
+
+**Single-active-session policy:** the moment a new WhatsApp links, every other session — linked or still pairing — is unlinked and purged. Only one clinic is ever connected at a time; `MAX_SESSIONS` only caps how many visitors can be mid-pairing simultaneously.
 
 ```bash
 docker build -t wa-lead-audit .

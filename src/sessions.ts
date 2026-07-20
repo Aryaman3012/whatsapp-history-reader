@@ -10,7 +10,8 @@ import { createWaConnection, type WaConnection } from './connection.js';
 
 export interface Session {
   id: string;
-  phone: string;
+  /** Null when the session pairs via QR instead of a pairing code. */
+  phone: string | null;
   store: Store;
   conn: WaConnection;
   dir: string;
@@ -50,7 +51,8 @@ export class SessionManager {
     }
   }
 
-  create(phone: string, ip: string): Session {
+  /** Pass phone=null for QR pairing. */
+  create(phone: string | null, ip: string): Session {
     const now = Date.now();
     const recent = (this.creationsByIp.get(ip) ?? []).filter((t) => now - t < 3600_000);
     if (recent.length >= this.opts.createsPerIpPerHour) {
@@ -69,13 +71,29 @@ export class SessionManager {
     const conn = createWaConnection({
       store,
       authDir: path.join(dir, 'auth'),
-      pairingPhoneNumber: phone,
+      pairingPhoneNumber: phone ?? undefined,
       label: id.slice(0, 8),
+      // Single-active-session policy: the moment this WhatsApp links, every
+      // other session (linked or still pairing) is unlinked and purged.
+      onConnected: () => void this.evictOthers(id),
     });
     const session: Session = { id, phone, store, conn, dir, createdAt: now, lastAccess: now };
     this.sessions.set(id, session);
-    console.log(`[sessions] created ${id.slice(0, 8)}… for +${phone} (${this.sessions.size} active)`);
+    console.log(
+      `[sessions] created ${id.slice(0, 8)}… (${phone ? `+${phone}` : 'QR'}) — ${this.sessions.size} active`
+    );
     return session;
+  }
+
+  private async evictOthers(keepId: string): Promise<void> {
+    const others = [...this.sessions.keys()].filter((id) => id !== keepId);
+    if (others.length === 0) return;
+    console.log(`[sessions] ${keepId.slice(0, 8)}… linked — evicting ${others.length} other session(s).`);
+    await Promise.all(
+      others.map((id) =>
+        this.destroy(id).catch((err) => console.error('[sessions] eviction failed:', err))
+      )
+    );
   }
 
   get(id: string): Session | undefined {

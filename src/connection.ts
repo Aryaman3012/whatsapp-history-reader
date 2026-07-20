@@ -96,6 +96,8 @@ export function createWaConnection(opts: {
   pairingPhoneNumber?: string;
   /** Log line prefix, e.g. a short session id. */
   label?: string;
+  /** Fired once each time the socket reaches the connected state. */
+  onConnected?: () => void;
 }): WaConnection {
   const { store, authDir, pairingPhoneNumber } = opts;
   const tag = opts.label ? `[wa:${opts.label}]` : '[wa]';
@@ -262,6 +264,11 @@ export function createWaConnection(opts: {
         status = 'connected';
         reconnectDelayMs = RECONNECT_DELAY_MIN_MS;
         console.log(`${tag} Connection open — waiting for history sync...`);
+        try {
+          opts.onConnected?.();
+        } catch (err) {
+          console.error(`${tag} onConnected hook failed:`, err);
+        }
       }
 
       if (connection === 'close') {
