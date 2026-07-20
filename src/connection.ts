@@ -11,6 +11,8 @@ import makeWASocket, {
 } from 'baileys';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Store, type MessageRow } from './store.js';
 
 export type WaStatus = 'connecting' | 'connected' | 'logged_out' | 'closed';
@@ -211,6 +213,36 @@ export function createWaConnection(opts: {
     if (lid && pn) store.upsertLidMapping(lid, pn);
   }
 
+  /**
+   * Baileys stores LID↔phone mappings from history sync in the auth dir
+   * (lid-mapping-<lid>_reverse.json → phone digits), not in any event we can
+   * subscribe to — import them so @lid chats and senders resolve to numbers.
+   */
+  function importLidMappings(): void {
+    let pairs: Array<{ lid: string; pn: string }> = [];
+    try {
+      for (const file of fs.readdirSync(authDir)) {
+        const match = file.match(/^lid-mapping-(\d+)_reverse\.json$/);
+        if (!match) continue;
+        try {
+          const pn = JSON.parse(fs.readFileSync(path.join(authDir, file), 'utf8'));
+          if (typeof pn === 'string' && /^\d+$/.test(pn)) pairs.push({ lid: match[1], pn });
+        } catch {
+          /* unreadable mapping file — skip */
+        }
+      }
+    } catch {
+      return; // auth dir gone (session being torn down)
+    }
+    if (pairs.length === 0) return;
+    store.upsertLidMappingsBulk(pairs);
+    const { fromPnJid, fromLidMap } = store.backfillSenderPn();
+    console.log(
+      `${tag} Imported ${pairs.length} LID→PN mappings; sender_pn backfilled ` +
+        `${fromPnJid + fromLidMap} messages.`
+    );
+  }
+
   async function connect(): Promise<void> {
     if (closed) return;
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -264,6 +296,9 @@ export function createWaConnection(opts: {
         status = 'connected';
         reconnectDelayMs = RECONNECT_DELAY_MIN_MS;
         console.log(`${tag} Connection open — waiting for history sync...`);
+        // Sweep again after the sync settles — mapping files are written
+        // asynchronously and the last history batch can beat them to disk.
+        setTimeout(importLidMappings, 30_000);
         try {
           opts.onConnected?.();
         } catch (err) {
@@ -320,6 +355,8 @@ export function createWaConnection(opts: {
         .filter((row): row is MessageRow => row !== null);
       const inserted = store.insertMessagesBulk(rows);
       console.log(`${tag} Stored ${inserted} new historical messages.`);
+      // Mappings for this batch land in the auth dir around the same time.
+      importLidMappings();
     });
 
     s.ev.on('messages.upsert', ({ messages }) => {
