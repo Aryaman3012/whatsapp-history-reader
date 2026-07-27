@@ -17,6 +17,7 @@ import {
   zeroReplyRate,
   buildTemplateTextSet,
   computeAllAuditMetrics,
+  meanReplyTime,
   type AuditMessage,
 } from '../src/auditor/index.js';
 
@@ -180,6 +181,28 @@ test('computeAllAuditMetrics: a lead whose only reply is a template counts as ne
   // Disabled → the auto-greeting counts as a reply, so nobody is never-replied.
   const off = computeAllAuditMetrics(msgs, { templateMinChats: 1_000_000 });
   assert.equal(off.summary.zeroReplyCount, 0);
+});
+
+test('meanReplyTime & response time: templated auto-ack does not stop the clock', () => {
+  const auto = 'Welcome to the clinic!';
+  const msgs: AuditMessage[] = [];
+  // 10 leads: instant auto-greeting at +1min, real reply at +60min.
+  for (let i = 0; i < 10; i++) {
+    const jid = `lead${i}@lid`;
+    const base = 10000 + i * 100000;
+    msgs.push({ timestamp: base, is_from_me: 0, message_text: 'hi', chat_jid: jid });
+    msgs.push({ timestamp: base + 60, is_from_me: 1, message_text: auto, chat_jid: jid }); // +1min template
+    msgs.push({ timestamp: base + 3600, is_from_me: 1, message_text: `real reply ${i}`, chat_jid: jid }); // +60min real
+  }
+  const on = computeAllAuditMetrics(msgs, { templateMinChats: 10 });
+  const off = computeAllAuditMetrics(msgs, { templateMinChats: 1_000_000 });
+
+  // With template filtering the measured wait is the real reply (60min), not the auto-ack (1min).
+  assert.equal(Math.round(on.meanReplyTime.meanMinutes ?? -1), 60);
+  assert.equal(Math.round(off.meanReplyTime.meanMinutes ?? -1), 1);
+  // Response-time buckets: templated → all 10 land in 15-60min+ (real reply), not <5min.
+  assert.equal(on.responseTimeBuckets['<5min'], 0);
+  assert.equal(off.responseTimeBuckets['<5min'], 10);
 });
 
 test('zeroReplyRate: lead-level across sessions — one replied session clears the lead', () => {

@@ -6,6 +6,7 @@
 import {
   type AuditMessage,
   type Conversation,
+  type IsSubstantiveReply,
   filterLeadConversations,
   groupMessagesIntoConversations,
 } from './conversations.js';
@@ -288,25 +289,33 @@ export interface MeanReplyTime {
 /**
  * Mean total reply time across leads the clinic actually replied to. For each
  * lead conversation, sums (clinic reply - preceding lead message) minutes over
- * every lead→clinic reply pair; conversations with no clinic reply are
- * excluded. Conversations must already be filtered to the active date window
- * (the route only loads messages after the range cutoff).
+ * every lead→clinic reply pair. Templated/auto-greeting replies are skipped —
+ * the instant auto-ack does not stop the clock, so the average measures the
+ * wait for a real reply. Conversations with no substantive reply are excluded.
+ * Conversations must already be filtered to the active date window.
  */
-export function meanReplyTime(conversations: Conversation[], windowLabel: string): MeanReplyTime {
+export function meanReplyTime(
+  conversations: Conversation[],
+  windowLabel: string,
+  isSubstantiveReply: IsSubstantiveReply = () => true
+): MeanReplyTime {
   const totals: number[] = [];
   for (const conv of conversations) {
-    if (!conv.firstLeadMessage || conv.clinicMessages.length === 0) continue;
+    if (!conv.firstLeadMessage) continue;
     let total = 0;
+    let pairs = 0;
     let lastLeadTs: number | null = null;
     for (const msg of conv.messages) {
       if (msg.is_from_me === 0) {
         lastLeadTs = msg.timestamp;
-      } else if (lastLeadTs !== null) {
+      } else if (lastLeadTs !== null && isSubstantiveReply(msg)) {
+        // A templated reply is ignored: the clock keeps running until a real one.
         total += (msg.timestamp - lastLeadTs) / 60;
         lastLeadTs = null;
+        pairs++;
       }
     }
-    totals.push(total);
+    if (pairs > 0) totals.push(total);
   }
   const leadCount = totals.length;
   return {
@@ -1070,7 +1079,7 @@ export function computeAllAuditMetrics(
     repeatQuestions,
     revenueAtRisk: revenueAtRisk(leads, resolved.conversionRate, resolved.avgTicketValue),
     staffCost: staffCost(staffHours),
-    meanReplyTime: meanReplyTime(leads, windowLabel),
+    meanReplyTime: meanReplyTime(leads, windowLabel, isSubstantiveReply),
     dayBreakdown: dayBreakdown(heatmap),
     afterHoursRevenueAtRisk: afterHoursRevenueAtRisk(
       leads,
