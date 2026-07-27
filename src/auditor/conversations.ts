@@ -33,13 +33,24 @@ export interface Conversation {
 const DEFAULT_GAP_THRESHOLD_MINUTES = 18 * 60;
 
 /**
+ * Predicate: is this outbound message a real (substantive) reply, or a canned
+ * template/auto-greeting that shouldn't count as engaging the lead? Media
+ * replies (no text) always count — a price-list image is a real reply.
+ */
+export type IsSubstantiveReply = (m: AuditMessage) => boolean;
+
+const ALWAYS_SUBSTANTIVE: IsSubstantiveReply = () => true;
+
+/**
  * Groups messages from a SINGLE chat into conversation sessions. A gap of more
  * than gapThresholdMinutes (default 18h) between consecutive messages starts a
- * new session.
+ * new session. `isSubstantiveReply` decides which outbound messages count as a
+ * genuine reply (defaults to all).
  */
 export function groupMessagesIntoConversations(
   messages: AuditMessage[],
-  gapThresholdMinutes: number = DEFAULT_GAP_THRESHOLD_MINUTES
+  gapThresholdMinutes: number = DEFAULT_GAP_THRESHOLD_MINUTES,
+  isSubstantiveReply: IsSubstantiveReply = ALWAYS_SUBSTANTIVE
 ): Conversation[] {
   if (messages.length === 0) return [];
 
@@ -57,19 +68,27 @@ export function groupMessagesIntoConversations(
   }
   sessions.push(current);
 
-  return sessions.map((msgs) => buildConversation(msgs, sorted));
+  return sessions.map((msgs) => buildConversation(msgs, sorted, isSubstantiveReply));
 }
 
-function buildConversation(msgs: AuditMessage[], allChatMessages: AuditMessage[]): Conversation {
+function buildConversation(
+  msgs: AuditMessage[],
+  allChatMessages: AuditMessage[],
+  isSubstantiveReply: IsSubstantiveReply
+): Conversation {
   const leadMessages = msgs.filter((m) => m.is_from_me === 0);
   const clinicMessages = msgs.filter((m) => m.is_from_me === 1);
   const firstLeadMessage = leadMessages[0] ?? null;
-  // First clinic message after the lead's first message ANYWHERE in the chat,
-  // not just inside this session — "never replied" must mean literally never,
-  // not "no reply before the session gap".
+  // First SUBSTANTIVE clinic message after the lead's first message ANYWHERE in
+  // the chat — templated auto-greetings don't count, so a lead who got only the
+  // canned welcome reads as never-replied, and response time measures the wait
+  // for a real reply.
   const firstClinicReply = firstLeadMessage
     ? allChatMessages.find(
-        (m) => m.is_from_me === 1 && m.timestamp >= firstLeadMessage.timestamp
+        (m) =>
+          m.is_from_me === 1 &&
+          m.timestamp >= firstLeadMessage.timestamp &&
+          isSubstantiveReply(m)
       ) ?? null
     : null;
   const reEngagedAfterReply =

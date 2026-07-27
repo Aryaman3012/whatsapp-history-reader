@@ -39,6 +39,7 @@ function parseOptions(query: Record<string, unknown>): MetricOptions {
   options.avgTicketValue = parseNumber(query.avgTicketValue);
   options.secondsPerMessage = parseNumber(query.secondsPerMessage);
   options.gapThresholdMinutes = parseNumber(query.gapThresholdMinutes);
+  options.templateMinChats = parseNumber(query.templateMinChats);
   return options;
 }
 

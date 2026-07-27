@@ -10,6 +10,8 @@ import {
   groupMessagesIntoConversations,
 } from './conversations.js';
 
+export type { IsSubstantiveReply } from './conversations.js';
+
 export interface BusinessHours {
   /** Hour of day (0-23) business opens, inclusive. */
   startHour: number;
@@ -25,6 +27,12 @@ export interface MetricOptions {
   avgTicketValue?: number;
   secondsPerMessage?: number;
   gapThresholdMinutes?: number;
+  /**
+   * An outbound text sent verbatim to at least this many distinct chats is
+   * treated as a template/auto-greeting and does NOT count as a real reply.
+   * Set very high to disable template filtering.
+   */
+  templateMinChats?: number;
 }
 
 export interface ResolvedMetricOptions {
@@ -33,6 +41,7 @@ export interface ResolvedMetricOptions {
   avgTicketValue: number;
   secondsPerMessage: number;
   gapThresholdMinutes: number;
+  templateMinChats: number;
 }
 
 export const DEFAULT_OPTIONS: ResolvedMetricOptions = {
@@ -41,6 +50,7 @@ export const DEFAULT_OPTIONS: ResolvedMetricOptions = {
   avgTicketValue: 1300,
   secondsPerMessage: 75,
   gapThresholdMinutes: 18 * 60,
+  templateMinChats: 10,
 };
 
 export function resolveOptions(options: MetricOptions = {}): ResolvedMetricOptions {
@@ -50,7 +60,32 @@ export function resolveOptions(options: MetricOptions = {}): ResolvedMetricOptio
     avgTicketValue: options.avgTicketValue ?? DEFAULT_OPTIONS.avgTicketValue,
     secondsPerMessage: options.secondsPerMessage ?? DEFAULT_OPTIONS.secondsPerMessage,
     gapThresholdMinutes: options.gapThresholdMinutes ?? DEFAULT_OPTIONS.gapThresholdMinutes,
+    templateMinChats: options.templateMinChats ?? DEFAULT_OPTIONS.templateMinChats,
   };
+}
+
+/**
+ * Identify templated outbound texts: exact text sent from the clinic across at
+ * least `minChats` distinct chats. Auto-greetings and canned lines are the same
+ * verbatim string blasted to many people; genuine replies are near-unique. This
+ * is account-agnostic — it needs no keyword list.
+ */
+export function buildTemplateTextSet(messages: AuditMessage[], minChats: number): Set<string> {
+  if (minChats <= 1) return new Set();
+  const chatsByText = new Map<string, Set<string>>();
+  for (const m of messages) {
+    if (m.is_from_me !== 1) continue;
+    const text = m.message_text;
+    if (!text || text.trim().length === 0) continue;
+    let chats = chatsByText.get(text);
+    if (!chats) chatsByText.set(text, (chats = new Set()));
+    chats.add(m.chat_jid ?? '');
+  }
+  const templates = new Set<string>();
+  for (const [text, chats] of chatsByText) {
+    if (chats.size >= minChats) templates.add(text);
+  }
+  return templates;
 }
 
 // ---------------------------------------------------------------------------
@@ -917,6 +952,8 @@ export interface AuditReport {
   options: ResolvedMetricOptions;
   totalConversations: number;
   leadConversations: number;
+  /** Number of distinct templated/auto-greeting reply texts excluded from "real reply". */
+  templatedReplyTexts: number;
   summary: AuditSummary;
   responseTimeBuckets: ResponseTimeBuckets;
   zeroReply: ZeroReplyRate;
@@ -970,6 +1007,12 @@ export function computeAllAuditMetrics(
 ): AuditReport {
   const resolved = resolveOptions(options);
 
+  // Templates are identified globally (across all chats), then excluded from
+  // what counts as a real reply. Media/empty-text replies are never templates.
+  const templateTexts = buildTemplateTextSet(messages, resolved.templateMinChats);
+  const isSubstantiveReply = (m: AuditMessage): boolean =>
+    !m.message_text || !templateTexts.has(m.message_text);
+
   const byChat = new Map<string, AuditMessage[]>();
   for (const msg of messages) {
     const key = msg.chat_jid ?? '';
@@ -984,7 +1027,11 @@ export function computeAllAuditMetrics(
   const allConversations: Conversation[] = [];
   for (const chatMessages of byChat.values()) {
     allConversations.push(
-      ...groupMessagesIntoConversations(chatMessages, resolved.gapThresholdMinutes)
+      ...groupMessagesIntoConversations(
+        chatMessages,
+        resolved.gapThresholdMinutes,
+        isSubstantiveReply
+      )
     );
   }
   const leads = filterLeadConversations(allConversations);
@@ -999,6 +1046,7 @@ export function computeAllAuditMetrics(
     options: resolved,
     totalConversations: allConversations.length,
     leadConversations: leads.length,
+    templatedReplyTexts: templateTexts.size,
     summary: {
       zeroReplyRate: zeroReply.percentage,
       zeroReplyCount: zeroReply.neverReplied,

@@ -26,6 +26,7 @@ export {
   afterHoursTimeBuckets,
   instantReplyRecoverable,
   computeAllAuditMetrics,
+  buildTemplateTextSet,
   resolveOptions,
   percentile,
   DEFAULT_OPTIONS,

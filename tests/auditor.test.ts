@@ -15,6 +15,8 @@ import {
   responseTimeVariance,
   revenueAtRisk,
   zeroReplyRate,
+  buildTemplateTextSet,
+  computeAllAuditMetrics,
   type AuditMessage,
 } from '../src/auditor/index.js';
 
@@ -142,6 +144,42 @@ test('afterHoursRevenueAtRisk: one patient with repeated ignored after-hours mes
   assert.equal(rar.revenueAtRisk, 1 * 0.2 * 1300);
   const recover = instantReplyRecoverable(convs, { startHour: 9, endHour: 19, daysOfWeek: [1, 2, 3, 4, 5, 6] }, 0.2, 1300);
   assert.equal(recover.lostCohort, 1);
+});
+
+test('buildTemplateTextSet: flags text sent to >= minChats distinct chats, spares near-unique replies', () => {
+  const msgs: AuditMessage[] = [];
+  // "Welcome!" blasted to 3 chats; "See you at 3pm" only to 1.
+  for (const c of ['a', 'b', 'c']) msgs.push({ timestamp: 0, is_from_me: 1, message_text: 'Welcome!', chat_jid: c });
+  msgs.push({ timestamp: 0, is_from_me: 1, message_text: 'See you at 3pm', chat_jid: 'a' });
+  // Inbound identical text must never be treated as a clinic template.
+  for (const c of ['a', 'b', 'c']) msgs.push({ timestamp: 0, is_from_me: 0, message_text: 'hi', chat_jid: c });
+  const templates = buildTemplateTextSet(msgs, 3);
+  assert.ok(templates.has('Welcome!'));
+  assert.ok(!templates.has('See you at 3pm'));
+  assert.ok(!templates.has('hi'));
+});
+
+test('computeAllAuditMetrics: a lead whose only reply is a template counts as never-replied', () => {
+  const auto = 'Welcome to the clinic!';
+  const msgs: AuditMessage[] = [];
+  // Ten leads each get ONLY the auto-greeting → template (>=10 chats), no real reply.
+  for (let i = 0; i < 10; i++) {
+    const jid = `lead${i}@lid`;
+    msgs.push({ timestamp: 1000 + i, is_from_me: 0, message_text: 'is the clinic open?', chat_jid: jid });
+    msgs.push({ timestamp: 1100 + i, is_from_me: 1, message_text: auto, chat_jid: jid });
+  }
+  // One lead gets a genuine, unique reply.
+  msgs.push({ timestamp: 2000, is_from_me: 0, message_text: 'price?', chat_jid: 'real@lid' });
+  msgs.push({ timestamp: 2100, is_from_me: 1, message_text: 'It is AED 500 for you specifically', chat_jid: 'real@lid' });
+
+  const withFilter = computeAllAuditMetrics(msgs, { templateMinChats: 10 });
+  assert.equal(withFilter.summary.totalLeads, 11);
+  assert.equal(withFilter.summary.zeroReplyCount, 10); // the 10 auto-greeting-only leads
+  assert.equal(withFilter.templatedReplyTexts, 1);
+
+  // Disabled → the auto-greeting counts as a reply, so nobody is never-replied.
+  const off = computeAllAuditMetrics(msgs, { templateMinChats: 1_000_000 });
+  assert.equal(off.summary.zeroReplyCount, 0);
 });
 
 test('zeroReplyRate: lead-level across sessions — one replied session clears the lead', () => {
