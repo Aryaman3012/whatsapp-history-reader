@@ -650,9 +650,14 @@
     #dashboard > * { animation: none !important; }
     .act { padding: 28px 0; }
     .hero-number { font-size: 52px; }
-    /* Acts 1-4 print; Act 5 details, toggles, and the after-hours expandable detail stay on screen only */
-    #act-details, #ah-detail-wrap, #ignored-rest, #ignored-toggle, .tier-controls { display: none !important; }
+    /* Acts 1-4 print; Act 5 details and toggles stay on screen only */
+    #act-details, #ignored-rest, #ignored-toggle, .tier-controls { display: none !important; }
+    /* After-hours detail always prints expanded — its toggle is screen-only */
+    button.ah-toggle { display: none !important; }
+    #ah-detail { display: block !important; break-inside: auto; }
+    #ah-detail-wrap { margin-top: 20px; }
     .leak, #ignored-section, .formula-box { break-inside: avoid; }
+    .ah-part, .ah-secondary, #act-pattern > .ah-split-number { break-inside: avoid; }
   }
 </style>
 </head>
@@ -684,6 +689,7 @@
         </div>
         <div id="range-label"></div>
       </div>
+      <p id="template-note" class="no-print" style="margin-top:14px;font-size:13px;color:var(--muted);line-height:1.5;"></p>
     </section>
 
     <!-- ===== ACT 2: THE BREAKDOWN ===== -->
@@ -723,7 +729,7 @@
       <div class="split-bar" id="tile-ah-bar"></div>
       <p id="tile-ah-sub"></p>
 
-      <div id="ah-detail-wrap" class="no-print">
+      <div id="ah-detail-wrap">
         <button type="button" class="ah-toggle" id="ah-detail-toggle" aria-expanded="false" aria-controls="ah-detail">See what after-hours is costing you →</button>
         <div id="ah-detail">
           <div class="ah-part ah-hero red">
@@ -1112,6 +1118,18 @@
       document.getElementById('range-label').textContent =
         'Showing data from ' + from.toLocaleDateString(undefined, opts) +
         ' to ' + to.toLocaleDateString(undefined, opts);
+    }
+
+    var tmplNote = document.getElementById('template-note');
+    var tmplCount = report.templatedReplyTexts || 0;
+    if (tmplCount > 0) {
+      tmplNote.innerHTML = '&#9432; A <b>reply</b> means a real, personal message. ' +
+        'Automated greetings and canned replies (' + tmplCount +
+        ' template' + (tmplCount === 1 ? '' : 's') + ' sent to many patients) don’t count — ' +
+        'a patient who only got the auto-greeting is treated as never replied to.';
+      tmplNote.style.display = 'block';
+    } else {
+      tmplNote.style.display = 'none';
     }
 
     var ignored = report.zeroReply.neverReplied;
