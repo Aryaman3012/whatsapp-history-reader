@@ -64,6 +64,25 @@ npx tsx scripts/cleanup-noise.ts      # purge protocol/system rows synced before
 
 Both already ran on the current DB; only needed again after a fresh sync from scratch.
 
+### Conversion rate (LLM-assisted)
+
+WhatsApp has no "booked" field, so conversion is read out of the conversation text by an LLM.
+
+```bash
+npx tsx scripts/conversion/extract-transcripts.ts <db> <work-dir> 300 20   # sample + batch
+# classify each batches/batch-NN.json with an LLM agent -> verdicts/verdict-NN.json
+npx tsx scripts/conversion/aggregate.ts <work-dir> <population>            # rate + cuts
+```
+
+Chats are classified into a 7-state funnel (not_patient, existing_patient, enquiry_ignored,
+enquiry_no_intent, quoted_then_silent, booking_attempted, booked). Conversion rate =
+booked / genuine new-patient enquiries, with a Wilson confidence interval.
+
+Two limits to remember: transcripts don't mark which clinic messages are templates, so the
+LLM over-credits auto-greetings as real replies (trust the code's `neverReplied` fact over the
+LLM's `enquiry_ignored` state); and bookings made by phone or walk-in never appear in WhatsApp,
+so the rate is a floor, not the clinic's true conversion.
+
 ## Deploy the free tool
 
 Serve mode turns this into a public tool: a visiting clinic scans a QR on `/` (or falls back to a pairing code), syncs, and lands on their audit at `/audit.html?sid=…`.
