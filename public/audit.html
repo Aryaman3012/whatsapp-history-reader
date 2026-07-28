@@ -656,6 +656,28 @@
     button.ah-toggle { display: none !important; }
     #ah-detail { display: block !important; break-inside: auto; }
     #ah-detail-wrap { margin-top: 20px; }
+    /* Charts: browsers drop backgrounds when printing, which blanks every bar.
+       Force color rendering, and swap the dark screen track for a light one. */
+    .split-bar, .split-bar .seg, .ah-timeline, .ah-timeline-track,
+    .ah-timeline-band, .ah-timeline-bar {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .ah-timeline-track {
+      background: #f6f7f9 !important;
+      border-color: #d7dbe2 !important;
+    }
+    /* Translucent screen colours wash out on white — print solid equivalents. */
+    .ah-timeline-band {
+      background: rgba(94, 106, 210, 0.14) !important;
+      border-color: rgba(94, 106, 210, 0.55) !important;
+    }
+    .ah-timeline-bar.ah-bar-after { background: #5e6ad2 !important; }
+    .ah-timeline-bar.ah-bar-during { background: #b6bac2 !important; }
+    .ah-timeline-count { color: #16181d !important; }
+    .ah-timeline-labels { color: #5b6472 !important; }
+    #ah-detail { background: #ffffff !important; border-color: #d7dbe2 !important; }
+    .ah-timeline-track, .ah-timeline { break-inside: avoid; }
     .leak, #ignored-section, .formula-box { break-inside: avoid; }
     .ah-part, .ah-secondary, #act-pattern > .ah-split-number { break-inside: avoid; }
   }
@@ -982,6 +1004,7 @@
       bar.style.width = ((z.end - z.start) / 24 * 100) + '%';
       if (z.after) {
         var h = z.count === 0 ? 3 : Math.max(Math.round(z.count / maxCount * 78), 8);
+        bar.className += ' ah-bar-after';
         bar.style.height = h + 'px';
         bar.style.background = 'rgba(113, 112, 255, 0.65)';
         bar.title = z.label + ': ' + z.count + ' lead' + (z.count === 1 ? '' : 's');
@@ -992,6 +1015,7 @@
           track.appendChild(lbl);
         }
       } else {
+        bar.className += ' ah-bar-during';
         bar.style.height = '8px';
         bar.style.background = 'rgba(138, 143, 152, 0.25)';
         bar.title = z.label + ' (9am–7pm)';
