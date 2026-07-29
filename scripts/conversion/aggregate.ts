@@ -70,16 +70,19 @@ function wilson(successes: number, n: number): [number, number] {
   return [((centre - spread) / d) * 100, ((centre + spread) / d) * 100];
 }
 
-const NON_ENQUIRY = new Set(['not_patient', 'existing_patient']);
+// insufficient_history is excluded from the denominator: we can't tell whether
+// those chats were even patients, so counting them either way would be a guess.
+const NON_ENQUIRY = new Set(['not_patient', 'existing_patient', 'insufficient_history']);
 const enquiries = verdicts.filter((v) => !NON_ENQUIRY.has(v.state));
 const booked = enquiries.filter((v) => v.state === 'booked');
 
-console.log('\n=== funnel (sample of ' + verdicts.length + ') ===');
+console.log('\n=== funnel (' + verdicts.length + ' chats) ===');
 const byState = new Map<string, number>();
 for (const v of verdicts) byState.set(v.state, (byState.get(v.state) ?? 0) + 1);
 const order = [
   'not_patient',
   'existing_patient',
+  'insufficient_history',
   'enquiry_ignored',
   'enquiry_no_intent',
   'quoted_then_silent',
@@ -93,13 +96,23 @@ for (const s of order) {
 }
 
 const [lo, hi] = wilson(booked.length, enquiries.length);
+const unjudgeable = byState.get('insufficient_history') ?? 0;
 console.log('\n=== conversion rate ===');
-console.log(`genuine new-patient enquiries in sample: ${enquiries.length}`);
+console.log(`genuine new-patient enquiries: ${enquiries.length}`);
 console.log(`booked: ${booked.length}`);
 console.log(
   `CONVERSION RATE: ${((booked.length / enquiries.length) * 100).toFixed(1)}%  (95% CI ${lo.toFixed(1)}–${hi.toFixed(1)}%)`
 );
-if (population > 0) {
+if (unjudgeable > 0) {
+  // Bound the answer by assuming the unknowable chats were all/none enquiries.
+  const worst = (booked.length / (enquiries.length + unjudgeable)) * 100;
+  const best = ((booked.length + unjudgeable) / (enquiries.length + unjudgeable)) * 100;
+  console.log(
+    `  ${unjudgeable} chats had too little history to judge — if all were enquiries that failed: ` +
+      `${worst.toFixed(1)}%; if all booked: ${best.toFixed(1)}%`
+  );
+}
+if (population > 0 && population !== verdicts.length) {
   const rate = booked.length / enquiries.length;
   const enquiryShare = enquiries.length / verdicts.length;
   console.log(
@@ -179,3 +192,58 @@ console.log('\n=== cross-check: "never got a real reply" ===');
 console.log(`  code (timestamps + templates): ${ignoredByCode.length}`);
 console.log(`  LLM (read the transcript):     ${ignoredByLLM.length}`);
 console.log(`  agreed on:                     ${bothIgnored}`);
+
+// --- per-number export ------------------------------------------------------
+// The deliverable: one row per phone number with its outcome.
+const labelsPath = path.join(workDir, 'labels.json');
+if (fs.existsSync(labelsPath)) {
+  const labels: Record<string, string> = JSON.parse(fs.readFileSync(labelsPath, 'utf8'));
+  const esc = (s: unknown) => `"${String(s ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+  const rows = [
+    [
+      'number',
+      'state',
+      'booked',
+      'treatment',
+      'appointment_time',
+      'first_contact',
+      'first_reply_minutes',
+      'never_replied',
+      'after_hours',
+      'messages',
+      'confidence',
+      'evidence',
+    ].join(','),
+  ];
+  for (const v of verdicts) {
+    const f = facts[v.id];
+    rows.push(
+      [
+        esc(labels[v.id] ?? v.id),
+        esc(v.state),
+        esc(v.booked),
+        esc(v.treatment),
+        esc(v.appointment_time),
+        esc(f?.firstContact),
+        esc(f?.firstResponseMinutes ?? ''),
+        esc(f?.neverReplied ? 'yes' : 'no'),
+        esc(f?.afterHours ? 'yes' : 'no'),
+        esc(f?.messageCount),
+        esc(v.confidence),
+        esc(v.evidence),
+      ].join(',')
+    );
+  }
+  const csvPath = path.join(workDir, 'numbers.csv');
+  fs.writeFileSync(csvPath, rows.join('\n'));
+  const jsonPath = path.join(workDir, 'numbers.json');
+  fs.writeFileSync(
+    jsonPath,
+    JSON.stringify(
+      verdicts.map((v) => ({ number: labels[v.id] ?? v.id, ...v, facts: facts[v.id] })),
+      null,
+      1
+    )
+  );
+  console.log(`\n=== per-number export ===\n  ${csvPath}\n  ${jsonPath}`);
+}

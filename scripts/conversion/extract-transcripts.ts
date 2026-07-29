@@ -162,6 +162,12 @@ fs.writeFileSync(
   JSON.stringify(Object.fromEntries(sample.map((r) => [r.id, r.facts])), null, 1)
 );
 
+// id -> phone/display label, so results can be reported per number.
+fs.writeFileSync(
+  path.join(outDir, 'labels.json'),
+  JSON.stringify(Object.fromEntries(sample.map((r) => [r.id, r.label])), null, 1)
+);
+
 console.log(`population (lead-initiated contacts): ${records.length}`);
 console.log(`sampled: ${sample.length} into ${batchCount} batches of ${batchSize}`);
 console.log(`never-replied in sample: ${sample.filter((r) => r.facts.neverReplied).length}`);
