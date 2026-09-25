@@ -13,6 +13,8 @@ export const FROZEN_RANGES = ['30d', '90d', '1y'] as const;
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+\.[^\s@]{2,}$/;
 const MAX_FIELD = 200;
 const SEND_ATTEMPTS = 3;
+const LEAD_ATTEMPTS = 3;
+const MAX_RESENDS_PER_SESSION = 3;
 
 export interface UnlockInput {
   clinic: string;
@@ -25,10 +27,16 @@ export interface UnlockInput {
 export interface UnlockSession {
   store: Store;
   phone: string | null;
+  /** False while history is still arriving — freezing then emails a partial report. */
+  syncSettled: boolean;
 }
 
 export interface UnlockDeps {
   sessions: { get(sid: string): UnlockSession | undefined };
+  /** Unlink and purge the WhatsApp session once its report is frozen. */
+  destroySession?: (sid: string) => Promise<unknown>;
+  /** Resend counters per session; the server owns one for the process. */
+  resendCounts?: Map<string, number>;
   reports: ReportStore;
   mailer: Mailer;
   sendLead: (
@@ -133,10 +141,17 @@ export async function unlockReport(
   }
 
   // A double-clicked form must not freeze a second report or send twice.
+  // 'queued' means the first send is still in flight — not a failure.
   const existing = deps.reports.getBySession(sid);
-  if (existing) return { ok: true, email: existing.email, delivered: existing.emailStatus === 'sent' };
+  if (existing) {
+    return {
+      ok: true,
+      email: existing.email,
+      delivered: existing.emailStatus === 'sent' || existing.emailStatus === 'queued',
+    };
+  }
 
-  if (session.store.getStats().totalMessages === 0) {
+  if (session.store.getStats().totalMessages === 0 || !session.syncSettled) {
     return { ok: false, status: 409, error: 'Still syncing your history — try again in a moment.' };
   }
 
@@ -159,21 +174,36 @@ export async function unlockReport(
   deps.reports.setEmailStatus(row.id, sendResult.status, sendResult.attempts);
 
   // The lead is captured whether or not the mail got through — a delivery
-  // failure is exactly when someone should be calling this clinic.
-  const lead = await deps.sendLead(
-    buildLeadPayload({
-      clinic,
-      name,
-      phone,
-      email,
-      avgTicketValue,
-      report: row.report['30d'],
-      reportUrl: `${deps.reportBaseUrl}/r/${row.id}`,
-      userAgent: meta.userAgent,
-      referrer: meta.referrer,
-    })
-  );
+  // failure is exactly when someone should be calling this clinic. Capture is
+  // the whole point of the feature, so a transient leads-api blip is retried
+  // rather than written off.
+  const payload = buildLeadPayload({
+    clinic,
+    name,
+    phone,
+    email,
+    avgTicketValue,
+    report: row.report['30d'],
+    reportUrl: `${deps.reportBaseUrl}/r/${row.id}`,
+    userAgent: meta.userAgent,
+    referrer: meta.referrer,
+  });
+  const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  let lead = await deps.sendLead(payload);
+  for (let attempt = 2; attempt <= LEAD_ATTEMPTS && !lead.ok; attempt++) {
+    await sleep((attempt - 1) * 500);
+    lead = await deps.sendLead(payload);
+  }
   deps.reports.setLeadStatus(row.id, lead.leadId, lead.ok ? 'sent' : `error: ${lead.error}`);
+
+  // The report is frozen and stored, so the WhatsApp link has done its job:
+  // unlink now rather than holding a session slot — and a linked device — for
+  // the rest of the TTL.
+  if (deps.destroySession) {
+    void deps.destroySession(sid).catch(() => {
+      /* the TTL reaper is the backstop */
+    });
+  }
 
   return { ok: true, email, delivered: sendResult.delivered };
 }
@@ -187,11 +217,20 @@ export async function resendReport(
   if (!email || email.length > MAX_FIELD || !EMAIL_RE.test(email)) {
     return { ok: false, status: 400, error: 'Enter a valid email address.' };
   }
-  if (!deps.sessions.get(sid)) {
-    return { ok: false, status: 401, error: 'Your session expired. Reload and connect again.' };
-  }
+  // Deliberately not requiring a live session: the WhatsApp link is dropped as
+  // soon as the report is frozen, and the report outlives it. Knowing the sid
+  // is the credential, exactly as it is for the rest of the session's data.
   const row = deps.reports.getBySession(sid);
   if (!row) return { ok: false, status: 404, error: 'No report to resend yet.' };
+
+  const counts = deps.resendCounts;
+  if (counts) {
+    const used = counts.get(sid) ?? 0;
+    if (used >= MAX_RESENDS_PER_SESSION) {
+      return { ok: false, status: 429, error: 'Too many resends. Run the audit again if you need it.' };
+    }
+    counts.set(sid, used + 1);
+  }
 
   deps.reports.setEmail(row.id, email);
   const sendResult = await deliver(deps, { ...row, email }, email);

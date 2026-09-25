@@ -34,9 +34,21 @@ const input: LeadInput = {
   reportUrl: 'https://heyanaya.ai/whatsapp-audit/r/tok123',
 };
 
+test('the payload uses the field names leads-api actually reads', () => {
+  // leads-api reads camelCase off the body: `body.adVariant`, `body.userAgent`.
+  // A snake_case key is silently ignored and the lead falls through to
+  // inferAdVariant()'s 'clinica' catch-all — the wrong bucket and the wrong
+  // Slack channel, with nothing to notice it by.
+  const p = buildLeadPayload({ ...input, userAgent: 'Mozilla/5.0' });
+  assert.equal(p.adVariant, 'clinica-whatsapp-audit');
+  assert.equal(p.userAgent, 'Mozilla/5.0');
+  assert.ok(!('ad_variant' in p), 'snake_case ad_variant is ignored by leads-api');
+  assert.ok(!('user_agent' in p), 'snake_case user_agent is ignored by leads-api');
+});
+
 test('the payload carries the variant, contact fields and the report link', () => {
   const p = buildLeadPayload(input);
-  assert.equal(p.ad_variant, 'clinica-whatsapp-audit');
+  assert.equal(p.adVariant, 'clinica-whatsapp-audit');
   assert.equal(p.channel, 'form');
   assert.equal(p.source, 'whatsapp-audit');
   assert.equal(p.clinic, 'Smile Dental');

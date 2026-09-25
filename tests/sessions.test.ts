@@ -13,6 +13,7 @@ function stubConnection(): WaConnection {
     isConnected: () => false,
     getStatus: () => 'connecting',
     getSyncProgress: () => null,
+    getLastSyncBatchAt: () => null,
     logout: async () => {},
     close: () => {},
   };

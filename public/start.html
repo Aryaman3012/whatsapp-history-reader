@@ -110,7 +110,7 @@
     <h1 style="font-size:19px;margin-bottom:6px">Sent</h1>
     <p class="sub">Your report is on its way to <b id="sent-to"></b>. It can take a minute to arrive.</p>
     <div id="resend-block" style="display:none">
-      <p class="hint">Wrong address? Enter the right one and we'll send it again.</p>
+      <p class="hint">Not there in a minute, or wrong address? Enter it again and we'll resend.</p>
       <div class="field"><input id="resend-email" type="email" autocomplete="email"></div>
       <button id="resend-btn" class="secondary">Send again</button>
       <div id="resend-error" class="error"></div>
@@ -216,9 +216,11 @@ async function poll() {
       $('sync-stats').textContent = (st.totalChats || 0) + ' chats · ' + (st.totalMessages || 0) + ' messages';
       const p = s.syncProgress;
       $('sync-fill').style.width = (p == null ? (st.totalMessages ? 15 : 5) : Math.max(5, p)) + '%';
-      if (p >= 100 || (st.totalMessages || 0) > 0) {
-        $('audit-btn').disabled = false;
-      }
+      // Only once the sync has settled: freezing mid-sync emails a partial
+      // report, and the chat history is gone before it could be redone.
+      var settled = s.syncSettled && (st.totalMessages || 0) > 0;
+      $('audit-btn').disabled = !settled;
+      $('audit-btn').textContent = settled ? 'Get my report' : 'Still syncing…';
       if (p >= 100) {
         $('sync-fill').style.width = '100%';
       }
@@ -249,10 +251,10 @@ $('unlock-btn').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Something went wrong.');
     $('sent-to').textContent = data.email;
-    $('resend-block').style.display = data.delivered ? 'none' : 'block';
-    if (!data.delivered) {
-      $('resend-error').textContent = "We couldn't deliver it — check the address and try again.";
-    }
+    $('resend-block').style.display = 'block';
+    $('resend-error').textContent = data.delivered
+      ? ''
+      : "We couldn't deliver it — check the address and try again.";
     show('step-sent');
   } catch (e) {
     $('unlock-error').textContent = e.message;
@@ -274,8 +276,7 @@ $('resend-btn').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Something went wrong.');
     $('sent-to').textContent = data.email;
-    $('resend-error').textContent = data.delivered ? '' : "Still couldn't deliver it.";
-    if (data.delivered) $('resend-block').style.display = 'none';
+    $('resend-error').textContent = data.delivered ? 'Sent again.' : "Still couldn't deliver it.";
   } catch (e) {
     $('resend-error').textContent = e.message;
   } finally {

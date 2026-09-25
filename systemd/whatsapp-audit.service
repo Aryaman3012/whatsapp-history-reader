@@ -1,0 +1,47 @@
+[Unit]
+Description=whatsapp-audit (free WhatsApp lead audit, served under heyanaya.ai/whatsapp-audit)
+After=network.target
+
+[Service]
+Type=simple
+User=whatsapp-audit
+Group=whatsapp-audit
+WorkingDirectory=/opt/whatsapp-history-reader
+ExecStart=/usr/bin/node /opt/whatsapp-history-reader/dist/index.js serve
+Restart=on-failure
+RestartSec=5
+
+# Read secrets from /etc/whatsapp-audit.env (root-owned, 600).
+# Required: SMTP_HOST, SMTP_USER, SMTP_PASS (Google Workspace app password —
+#           the account needs 2-Step Verification), MAIL_FROM (that account or
+#           one of its "send mail as" aliases), REPORT_BASE_URL.
+# Optional: MAIL_REPLY_TO, MAIL_CURRENCY, LEADS_ENDPOINT.
+# The service refuses to start without SMTP_HOST and REPORT_BASE_URL: the
+# report is delivered by email and nowhere else, so a mailless process would
+# tell every clinic "sent" and deliver nothing.
+EnvironmentFile=/etc/whatsapp-audit.env
+
+# Non-secret runtime config
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=BASE_PATH=/whatsapp-audit
+Environment=DATA_DIR=/var/lib/whatsapp-audit
+Environment=SESSION_TTL_MIN=120
+Environment=MAX_SESSIONS=3
+Environment=CREATES_PER_IP_PER_HOUR=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# Sessions are ephemeral, but DATA_DIR also holds reports.db, which is kept.
+ReadWritePaths=/var/lib/whatsapp-audit
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

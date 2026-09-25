@@ -23,9 +23,17 @@ interface Harness {
   dir: string;
   reports: ReportStore;
   waStore: Store;
+  destroyed: string[];
 }
 
-function harness(opts: { messages?: number; mailFails?: boolean; leadFails?: boolean } = {}): Harness {
+function harness(
+  opts: {
+    messages?: number;
+    mailFails?: boolean;
+    leadFails?: number | boolean;
+    syncSettled?: boolean;
+  } = {}
+): Harness {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'unlock-test-'));
   const waStore = new Store(path.join(dir, 'wa.sqlite'));
   const jid = '971500000001@s.whatsapp.net';
@@ -51,8 +59,19 @@ function harness(opts: { messages?: number; mailFails?: boolean; leadFails?: boo
   const sent: Array<{ to: string; subject: string }> = [];
   const leads: Array<Record<string, unknown>> = [];
 
+  let leadAttempts = 0;
+  const destroyed: string[] = [];
+
   const deps: UnlockDeps = {
-    sessions: { get: (sid) => (sid === 'sess-1' ? { store: waStore, phone: '971500000009' } : undefined) },
+    sessions: {
+      get: (sid) =>
+        sid === 'sess-1'
+          ? { store: waStore, phone: '971500000009', syncSettled: opts.syncSettled ?? true }
+          : undefined,
+    },
+    destroySession: async (sid) => {
+      destroyed.push(sid);
+    },
     reports,
     mailer: {
       send: async (to, email) => {
@@ -63,12 +82,18 @@ function harness(opts: { messages?: number; mailFails?: boolean; leadFails?: boo
     },
     sendLead: async (payload) => {
       leads.push(payload);
-      return opts.leadFails ? { ok: false, leadId: null, error: 'boom' } : { ok: true, leadId: 'lead-1' };
+      leadAttempts++;
+      const failFor =
+        opts.leadFails === true ? Infinity : typeof opts.leadFails === 'number' ? opts.leadFails : 0;
+      return leadAttempts <= failFor
+        ? { ok: false, leadId: null, error: 'boom' }
+        : { ok: true, leadId: 'lead-1' };
     },
     reportBaseUrl: 'https://heyanaya.ai/whatsapp-audit',
+    resendCounts: new Map(),
     sleep: async () => {},
   };
-  return { deps, sent, leads, dir, reports, waStore };
+  return { deps, sent, leads, dir, reports, waStore, destroyed };
 }
 
 function cleanup(h: Harness): void {
@@ -112,7 +137,7 @@ test('a successful unlock stores the report, mails it, and posts the lead', asyn
     assert.equal(h.sent.length, 1);
     assert.equal(h.sent[0].to, 'owner@clinic.ae');
     assert.equal(h.leads.length, 1);
-    assert.match(String(h.leads[0].audit_report_url), new RegExp(row.id));
+    assert.match(String(h.leads[0].auditReportUrl), new RegExp(row.id));
   } finally {
     cleanup(h);
   }
@@ -212,6 +237,89 @@ test('resend with no prior unlock is rejected', async () => {
     const result = await resendReport(h.deps, 'sess-1', 'right@clinic.ae');
     assert.equal(result.ok, false);
     assert.equal(!result.ok && result.status, 404);
+  } finally {
+    cleanup(h);
+  }
+});
+
+test('unlocking while history is still arriving is refused', async () => {
+  // Messages exist, but the sync has not settled. Freezing here would email a
+  // partial report permanently — the WhatsApp data is gone at the TTL, so the
+  // real numbers can never be recovered.
+  const h = harness({ syncSettled: false });
+  try {
+    const result = await unlockReport(h.deps, 'sess-1', GOOD, META);
+    assert.equal(result.ok, false);
+    assert.equal(!result.ok && result.status, 409);
+    assert.equal(h.sent.length, 0);
+    assert.equal(h.reports.getBySession('sess-1'), undefined);
+  } finally {
+    cleanup(h);
+  }
+});
+
+test('the WhatsApp session is released as soon as the report is frozen', async () => {
+  // Holding the slot for the full TTL after the visitor has left puts the tool
+  // at capacity after MAX_SESSIONS visitors per two hours — and keeps a device
+  // linked that no longer needs to be.
+  const h = harness();
+  try {
+    await unlockReport(h.deps, 'sess-1', GOOD, META);
+    assert.deepEqual(h.destroyed, ['sess-1']);
+  } finally {
+    cleanup(h);
+  }
+});
+
+test('resend still works after the session is gone', async () => {
+  const h = harness();
+  try {
+    await unlockReport(h.deps, 'sess-1', GOOD, META);
+    const result = await resendReport(h.deps, 'sess-1', 'right@clinic.ae');
+    assert.equal(result.ok, true);
+    assert.equal(h.sent[1].to, 'right@clinic.ae');
+  } finally {
+    cleanup(h);
+  }
+});
+
+test('resend is rate limited per session', async () => {
+  const h = harness();
+  try {
+    await unlockReport(h.deps, 'sess-1', GOOD, META);
+    for (let i = 0; i < 3; i++) {
+      assert.equal((await resendReport(h.deps, 'sess-1', `a${i}@clinic.ae`)).ok, true);
+    }
+    const blocked = await resendReport(h.deps, 'sess-1', 'a4@clinic.ae');
+    assert.equal(blocked.ok, false);
+    assert.equal(!blocked.ok && blocked.status, 429);
+  } finally {
+    cleanup(h);
+  }
+});
+
+test('a transient lead failure is retried rather than lost', async () => {
+  // Lead capture is the point of the feature; leads-api restarting during a
+  // deploy must not cost the lead.
+  const h = harness({ leadFails: 1 });
+  try {
+    await unlockReport(h.deps, 'sess-1', GOOD, META);
+    assert.equal(h.leads.length, 2, 'should have retried once');
+    assert.equal(h.reports.getBySession('sess-1')!.leadId, 'lead-1');
+  } finally {
+    cleanup(h);
+  }
+});
+
+test('a double submit mid-send does not claim delivery failed', async () => {
+  // email_status is only written once the send finishes; until then it is
+  // 'queued', which must not be reported to the visitor as a failure.
+  const h = harness();
+  try {
+    const first = unlockReport(h.deps, 'sess-1', GOOD, META);
+    const second = await unlockReport(h.deps, 'sess-1', GOOD, META);
+    await first;
+    assert.equal(second.ok && second.delivered, true);
   } finally {
     cleanup(h);
   }

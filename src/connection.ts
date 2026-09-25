@@ -24,6 +24,8 @@ export interface WaConnection {
   getStatus(): WaStatus;
   /** 0-100 best-effort history sync progress; null before the first batch. */
   getSyncProgress(): number | null;
+  /** Epoch ms of the last history batch; null before the first. */
+  getLastSyncBatchAt(): number | null;
   /** De-register this linked device from the WhatsApp account. */
   logout(): Promise<void>;
   /** Tear down the socket without logging out (keeps the device linked). */
@@ -109,6 +111,7 @@ export function createWaConnection(opts: {
   let connected = false;
   let status: WaStatus = 'connecting';
   let syncProgress: number | null = null;
+  let lastSyncBatchAt: number | null = null;
   let reconnectDelayMs = RECONNECT_DELAY_MIN_MS;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let sock: WASocket | null = null;
@@ -330,6 +333,7 @@ export function createWaConnection(opts: {
 
     s.ev.on('messaging-history.set', ({ chats, contacts, messages, progress, syncType }) => {
       if (typeof progress === 'number') syncProgress = progress;
+      lastSyncBatchAt = Date.now();
       console.log(
         `${tag} History sync batch: ${chats.length} chats, ${contacts.length} contacts, ` +
           `${messages.length} messages (progress: ${progress ?? '?'}%, type: ${syncType ?? '?'})`
@@ -401,6 +405,7 @@ export function createWaConnection(opts: {
     isConnected: () => connected,
     getStatus: () => status,
     getSyncProgress: () => syncProgress,
+    getLastSyncBatchAt: () => lastSyncBatchAt,
     async logout() {
       closed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);

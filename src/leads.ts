@@ -25,7 +25,10 @@ export function buildLeadPayload(input: LeadInput): Record<string, unknown> {
   const atRisk = Math.round(r.revenueAtRisk.estimatedRevenueAtRisk);
 
   return {
-    ad_variant: 'clinica-whatsapp-audit',
+    // leads-api reads camelCase off the body (body.adVariant, body.userAgent).
+    // Snake_case keys are ignored and the lead silently falls through to
+    // inferAdVariant()'s 'clinica' catch-all — wrong bucket, wrong Slack channel.
+    adVariant: 'clinica-whatsapp-audit',
     channel: 'form',
     source: 'whatsapp-audit',
     name: input.name,
@@ -37,14 +40,14 @@ export function buildLeadPayload(input: LeadInput): Record<string, unknown> {
       `(${Math.round(r.zeroReply.percentage)}%), ~${atRisk} at risk over ${r.range}. ` +
       `Report: ${input.reportUrl}`,
     // Compact summary only — never the conversation rows.
-    audit_never_replied: missed,
-    audit_total_leads: total,
-    audit_zero_reply_pct: Math.round(r.zeroReply.percentage),
-    audit_revenue_at_risk: atRisk,
-    audit_avg_ticket_value: input.avgTicketValue,
-    audit_range: r.range,
-    audit_report_url: input.reportUrl,
-    user_agent: input.userAgent ?? null,
+    auditNeverReplied: missed,
+    auditTotalLeads: total,
+    auditZeroReplyPct: Math.round(r.zeroReply.percentage),
+    auditRevenueAtRisk: atRisk,
+    auditAvgTicketValue: input.avgTicketValue,
+    auditRange: r.range,
+    auditReportUrl: input.reportUrl,
+    userAgent: input.userAgent ?? null,
     referrer: input.referrer ?? null,
   };
 }

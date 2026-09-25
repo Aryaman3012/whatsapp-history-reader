@@ -37,6 +37,47 @@ function escapeHtml(s: string): string {
   );
 }
 
+/**
+ * Mail config from the environment. A missing SMTP_HOST is fatal in serve
+ * mode: the fallback transport always succeeds, so a mailless production box
+ * would report every unlock as delivered and send nothing. Local development
+ * opts into that fallback explicitly with ALLOW_NO_SMTP=1.
+ */
+export function resolveMailConfig(env: NodeJS.ProcessEnv): MailerConfig {
+  const host = env.SMTP_HOST;
+  if (!host && env.ALLOW_NO_SMTP !== '1') {
+    throw new Error(
+      'SMTP_HOST is not set. The report is delivered by email and nothing else, so serve mode ' +
+        'refuses to start without it. Set ALLOW_NO_SMTP=1 to log messages instead of sending them.'
+    );
+  }
+  return {
+    host,
+    port: env.SMTP_PORT ? parseInt(env.SMTP_PORT, 10) : undefined,
+    secure: env.SMTP_SECURE !== 'false',
+    user: env.SMTP_USER,
+    pass: env.SMTP_PASS,
+    from: env.MAIL_FROM ?? 'reports@heyanaya.ai',
+    replyTo: env.MAIL_REPLY_TO,
+    currency: env.MAIL_CURRENCY ?? 'AED',
+  };
+}
+
+/**
+ * The public origin plus base path that goes into every emailed link. There is
+ * no safe default: a localhost fallback emails dead links to real clinics.
+ */
+export function resolveReportBaseUrl(env: NodeJS.ProcessEnv): string {
+  const url = (env.REPORT_BASE_URL ?? '').replace(/\/+$/, '');
+  if (!url) {
+    throw new Error(
+      'REPORT_BASE_URL is not set. It is the link in every report email, e.g. ' +
+        'https://heyanaya.ai/whatsapp-audit'
+    );
+  }
+  return url;
+}
+
 export function buildReportEmail(args: {
   clinic: string;
   report: AuditReportResponse;

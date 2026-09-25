@@ -47,6 +47,24 @@ export function reportRedirectTarget(token: string): string {
   return `../audit.html?report=${encodeURIComponent(token)}`;
 }
 
+/**
+ * History arrives in batches and Baileys does not reliably report a final
+ * 100%, so "settled" means either progress reached 100 or no batch has landed
+ * for SYNC_QUIET_MS. Freezing before that emails a partial report that can
+ * never be regenerated — the WhatsApp data is gone at the TTL.
+ */
+export const SYNC_QUIET_MS = 20_000;
+
+export function isSyncSettled(
+  progress: number | null,
+  lastBatchAt: number | null,
+  now: number = Date.now()
+): boolean {
+  if (progress !== null && progress >= 100) return true;
+  if (lastBatchAt === null) return false;
+  return now - lastBatchAt > SYNC_QUIET_MS;
+}
+
 /** Report tokens are database keys, never path segments. */
 export function isSafeToken(token: string): boolean {
   return /^[A-Za-z0-9_-]{1,128}$/.test(token);
@@ -87,8 +105,15 @@ export function startServer(port: number, opts: ServerOptions): void {
     return store;
   }
 
-  router.use(express.static(path.join(__dirname, '..', 'public'), { index: opts.mode === 'serve' ? 'start.html' : 'index.html' }));
-  router.use(createAuditRouter(requireStore));
+  router.use(
+    express.static(path.join(__dirname, '..', 'public'), {
+      index: opts.mode === 'serve' ? 'start.html' : 'index.html',
+    })
+  );
+  // The live audit route is local-mode only. In serve mode the report is
+  // gated behind the unlock form and delivered by email, so exposing
+  // /api/audit?sid=… would let anyone holding a sid read it ungated.
+  if (opts.mode === 'local') router.use(createAuditRouter(requireStore));
 
   // ---- Session lifecycle (serve mode only) --------------------------------
   if (opts.mode === 'serve') {
@@ -128,6 +153,7 @@ export function startServer(port: number, opts: ServerOptions): void {
         pairingCode: session.conn.getPairingCode(),
         hasQR: session.conn.getQR() !== null,
         syncProgress: session.conn.getSyncProgress(),
+        syncSettled: isSyncSettled(session.conn.getSyncProgress(), session.conn.getLastSyncBatchAt()),
         stats: session.store.getStats(),
         expiresAt: null, // informational TTL is in the UI copy
       });
@@ -143,9 +169,16 @@ export function startServer(port: number, opts: ServerOptions): void {
       sessions: {
         get: (sid) => {
           const s = opts.sessions.get(sid);
-          return s ? { store: s.store, phone: s.phone } : undefined;
+          if (!s) return undefined;
+          return {
+            store: s.store,
+            phone: s.phone,
+            syncSettled: isSyncSettled(s.conn.getSyncProgress(), s.conn.getLastSyncBatchAt()),
+          };
         },
       },
+      destroySession: (sid) => opts.sessions.destroy(sid),
+      resendCounts: new Map<string, number>(),
       reports: opts.reports,
       mailer: opts.mailer,
       sendLead: (payload) => postLead(opts.leadsEndpoint, payload),

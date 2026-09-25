@@ -9,7 +9,7 @@ import { createWaConnection } from './connection.js';
 import { SessionManager } from './sessions.js';
 import { startServer } from './server.js';
 import { ReportStore } from './reports.js';
-import { createMailer } from './mailer.js';
+import { createMailer, resolveMailConfig, resolveReportBaseUrl } from './mailer.js';
 import { LEADS_ENDPOINT } from './leads.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
@@ -33,17 +33,13 @@ if (rawArg === 'serve') {
   // Reports outlive the sessions that produced them: the WhatsApp data is
   // deleted at the TTL, the computed report is kept.
   const reports = new ReportStore(path.join(dataDir, 'reports.db'));
-  const currency = process.env.MAIL_CURRENCY ?? 'AED';
-  const mailer = createMailer({
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined,
-    secure: process.env.SMTP_SECURE !== 'false',
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-    from: process.env.MAIL_FROM ?? 'reports@heyanaya.ai',
-    replyTo: process.env.MAIL_REPLY_TO,
-    currency,
-  });
+  // Both throw rather than starting a tool that cannot deliver: the report is
+  // emailed and nowhere else, so a missing SMTP host or a localhost report URL
+  // would fail silently, one clinic at a time.
+  const mailConfig = resolveMailConfig(process.env);
+  const reportBaseUrl = resolveReportBaseUrl(process.env);
+  const currency = mailConfig.currency ?? 'AED';
+  const mailer = createMailer(mailConfig);
   void mailer.verify().then((ok) => {
     if (!ok) console.error('[app] SMTP is not usable — unlocks will record delivery failures.');
   });
@@ -53,7 +49,7 @@ if (rawArg === 'serve') {
     sessions,
     reports,
     mailer,
-    reportBaseUrl: process.env.REPORT_BASE_URL ?? `http://localhost:${PORT}`,
+    reportBaseUrl,
     leadsEndpoint: process.env.LEADS_ENDPOINT ?? LEADS_ENDPOINT,
     currency,
   });

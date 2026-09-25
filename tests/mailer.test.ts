@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import nodemailer from 'nodemailer';
-import { buildReportEmail, createMailer } from '../src/mailer.js';
+import { buildReportEmail, createMailer, resolveMailConfig, resolveReportBaseUrl } from '../src/mailer.js';
 import type { AuditReportResponse } from '../src/auditor/auditRoute.js';
 
 const report = {
@@ -65,5 +65,35 @@ test('send rejects when the transport fails, so callers can record it', async ()
   await assert.rejects(
     () => mailer.send('owner@clinic.ae', buildReportEmail({ clinic: 'C', report, reportUrl: url })),
     /ECONNREFUSED/
+  );
+});
+
+test('serve mode refuses to start with no SMTP configured', () => {
+  // A missing SMTP_HOST in production is the one failure that is invisible:
+  // the stream transport always resolves, so every unlock would report
+  // "sent" and nobody would receive anything.
+  assert.throws(() => resolveMailConfig({ MAIL_FROM: 'reports@heyanaya.ai' }), /SMTP_HOST/);
+  const dev = resolveMailConfig({ ALLOW_NO_SMTP: '1', MAIL_FROM: 'reports@heyanaya.ai' });
+  assert.equal(dev.host, undefined);
+  const prod = resolveMailConfig({
+    SMTP_HOST: 'smtp.gmail.com',
+    SMTP_USER: 'reports@heyanaya.ai',
+    SMTP_PASS: 'app-password',
+    MAIL_FROM: 'reports@heyanaya.ai',
+  });
+  assert.equal(prod.host, 'smtp.gmail.com');
+  assert.equal(prod.secure, true);
+});
+
+test('serve mode refuses to start without a public report base url', () => {
+  // The default used to be http://localhost:$PORT, which emails dead links.
+  assert.throws(() => resolveReportBaseUrl({}), /REPORT_BASE_URL/);
+  assert.equal(
+    resolveReportBaseUrl({ REPORT_BASE_URL: 'https://heyanaya.ai/whatsapp-audit' }),
+    'https://heyanaya.ai/whatsapp-audit'
+  );
+  assert.equal(
+    resolveReportBaseUrl({ ALLOW_NO_SMTP: '1', REPORT_BASE_URL: 'http://localhost:3000' }),
+    'http://localhost:3000'
   );
 });

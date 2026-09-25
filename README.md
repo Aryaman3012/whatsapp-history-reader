@@ -85,9 +85,14 @@ so the rate is a floor, not the clinic's true conversion.
 
 ## Deploy the free tool
 
-Serve mode turns this into a public tool: a visiting clinic scans a QR on `/` (or falls back to a pairing code), syncs, and lands on their audit at `/audit.html?sid=…`.
+Serve mode turns this into a public tool: a visiting clinic scans a QR on `/` (or falls back to a pairing code), syncs, fills in the unlock form, and receives its report **by email**. The report is never shown in the browser at unlock time, and the live `/api/audit` route is not mounted in serve mode — the only way to read a report is the emailed link.
 
 **Sessions run concurrently.** Clinics arriving minutes apart each get their own session, and a new pairing never disturbs one already syncing. `MAX_SESSIONS` is the real cap: past it, new visitors are told the tool is busy rather than anyone being evicted.
+
+On a VPS, `systemd/whatsapp-audit.service` is the unit `deploy.sh` restarts: copy it to
+`/etc/systemd/system/`, put the secrets in `/etc/whatsapp-audit.env` (root-owned, 600), and
+create `/var/lib/whatsapp-audit` owned by the service user. `nginx-whatsapp-audit.conf.example`
+in the clinica-landing repo is the matching proxy config.
 
 ```bash
 docker build -t wa-lead-audit .

@@ -118,9 +118,10 @@ export class ReportStore {
     this.db
       .prepare(
         `INSERT INTO reports (id, created_at, session_id, email, name, phone, clinic,
-           avg_ticket_value, wa_phone, report_json, email_attempts, ip, user_agent, referrer)
+           avg_ticket_value, wa_phone, report_json, email_status, email_attempts,
+           ip, user_agent, referrer)
          VALUES (@id, @created_at, @session_id, @email, @name, @phone, @clinic,
-           @avg_ticket_value, @wa_phone, @report_json, 0, @ip, @user_agent, @referrer)`
+           @avg_ticket_value, @wa_phone, @report_json, 'queued', 0, @ip, @user_agent, @referrer)`
       )
       .run({
         id,
