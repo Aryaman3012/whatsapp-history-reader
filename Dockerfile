@@ -22,11 +22,17 @@ ENV NODE_ENV=production \
     PORT=3000 \
     DATA_DIR=/data \
     SESSION_TTL_MIN=120 \
-    MAX_SESSIONS=10 \
+    MAX_SESSIONS=3 \
     CREATES_PER_IP_PER_HOUR=3
 
-# Session data is ephemeral by design — no volume needed; mounting one anyway
-# is harmless (sessions are purged on boot).
+# Set at run time, not baked in: BASE_PATH, REPORT_BASE_URL, LEADS_ENDPOINT,
+# SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, MAIL_FROM,
+# MAIL_REPLY_TO, MAIL_CURRENCY. SMTP_PASS is a Google Workspace app password —
+# pass it from the host's env file, never build it into the image.
+
+# Session data is ephemeral by design, but DATA_DIR also holds reports.db,
+# which is NOT ephemeral — mount a volume for it or stored reports die with
+# the container.
 RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 3000

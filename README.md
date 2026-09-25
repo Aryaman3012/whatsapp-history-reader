@@ -103,6 +103,31 @@ Environment variables (defaults in parentheses):
 - `SESSION_TTL_MIN` (120) — after this, the session's device is **logged out of WhatsApp and all its data is deleted**
 - `MAX_SESSIONS` (3) — concurrent sessions; each one is a linked device connecting from your server's IP, so raise it only with evidence
 - `CREATES_PER_IP_PER_HOUR` (3) — session-creation rate limit
+- `BASE_PATH` (empty) — mount the whole tool under a path, e.g. `/whatsapp-audit` behind nginx
+- `REPORT_BASE_URL` (`http://localhost:$PORT`) — public origin **plus base path**, e.g. `https://heyanaya.ai/whatsapp-audit`. This is what goes in the emailed report link, so a wrong value emails dead links.
+- `LEADS_ENDPOINT` (`https://leads.cashflohero.ai/v1/leads`) — where unlocks are captured as leads
+
+Mail (the report is delivered by email and nowhere else, so none of this is optional in production):
+
+- `SMTP_HOST` / `SMTP_PORT` (465) / `SMTP_SECURE` (true) — `smtp.gmail.com` for Google Workspace
+- `SMTP_USER` / `SMTP_PASS` — the Workspace account and a **16-character app password**. App passwords require 2-Step Verification on that account. This is a secret: keep it in the service env file, never in the repo.
+- `MAIL_FROM` (`reports@heyanaya.ai`) — must be the Workspace account itself or one of its "send mail as" aliases, or Gmail rewrites the header and DMARC alignment breaks
+- `MAIL_REPLY_TO` — a real inbox, so a clinic replying to its report reaches a person
+- `MAIL_CURRENCY` (`AED`) — currency shown in the email's revenue figure
+
+With no `SMTP_HOST` set the mailer logs each message instead of sending it, which is how the unlock flow is exercisable locally.
+
+## Reports
+
+A visitor pairs and syncs first; the report is gated behind a short form (clinic, name, mobile, email)
+and **delivered only by email** — it is never shown in the browser at unlock time, and the link is not
+returned by the API.
+
+At unlock the report is computed once for all three ranges and stored in `DATA_DIR/reports.db`, keyed by
+the email address it was sent to. That database is **not** purged with the sessions: the WhatsApp
+connection and the synced chat history are still deleted at the TTL, while the finished report is kept
+and the emailed link keeps working. Each unlock is also posted to `leads-api` as
+`ad_variant: clinica-whatsapp-audit`, with the report link in the lead's notes.
 
 How it stays safe(ish):
 

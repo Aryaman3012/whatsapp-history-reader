@@ -57,6 +57,12 @@ export function startServer(port: number, opts: ServerOptions): void {
   app.use(express.json({ limit: '10kb' }));
   app.disable('x-powered-by');
 
+  // Everything hangs off a router so the whole tool can be mounted under a
+  // base path (e.g. /whatsapp-audit behind nginx). The pages use relative
+  // URLs, so nothing else needs to know where it is mounted.
+  const basePath = (process.env.BASE_PATH ?? '').replace(/\/+$/, '');
+  const router = express.Router();
+
   // Resolve which Store a request may read. In serve mode a missing/unknown
   // sid is a hard 401/404 — there is no cross-session access path.
   function resolveStore(req: express.Request): Store | null {
@@ -81,12 +87,12 @@ export function startServer(port: number, opts: ServerOptions): void {
     return store;
   }
 
-  app.use(express.static(path.join(__dirname, '..', 'public'), { index: opts.mode === 'serve' ? 'start.html' : 'index.html' }));
-  app.use(createAuditRouter(requireStore));
+  router.use(express.static(path.join(__dirname, '..', 'public'), { index: opts.mode === 'serve' ? 'start.html' : 'index.html' }));
+  router.use(createAuditRouter(requireStore));
 
   // ---- Session lifecycle (serve mode only) --------------------------------
   if (opts.mode === 'serve') {
-    app.post('/api/session', (req, res) => {
+    router.post('/api/session', (req, res) => {
       // No phone → QR pairing; phone → pairing-code flow.
       const rawPhone = String(req.body?.phone ?? '').replace(/[^\d]/g, '');
       const phone = rawPhone === '' ? null : rawPhone;
@@ -110,7 +116,7 @@ export function startServer(port: number, opts: ServerOptions): void {
       }
     });
 
-    app.get('/api/session/:sid', (req, res) => {
+    router.get('/api/session/:sid', (req, res) => {
       const session = opts.sessions.get(req.params.sid);
       if (!session) {
         res.status(404).json({ error: 'Session not found (it may have expired and been deleted).' });
@@ -127,7 +133,7 @@ export function startServer(port: number, opts: ServerOptions): void {
       });
     });
 
-    app.delete('/api/session/:sid', async (req, res) => {
+    router.delete('/api/session/:sid', async (req, res) => {
       const destroyed = await opts.sessions.destroy(req.params.sid);
       res.json({ destroyed });
     });
@@ -153,7 +159,7 @@ export function startServer(port: number, opts: ServerOptions): void {
         .trim();
     }
 
-    app.post('/api/unlock', async (req, res) => {
+    router.post('/api/unlock', async (req, res) => {
       const sid = String(req.body?.sid ?? '');
       const result = await unlockReport(unlockDeps, sid, req.body, {
         ip: clientIp(req) || null,
@@ -168,7 +174,7 @@ export function startServer(port: number, opts: ServerOptions): void {
       res.json({ ok: true, email: result.email, delivered: result.delivered });
     });
 
-    app.post('/api/unlock/resend', async (req, res) => {
+    router.post('/api/unlock/resend', async (req, res) => {
       const result = await resendReport(unlockDeps, String(req.body?.sid ?? ''), req.body?.email);
       if (!result.ok) {
         res.status(result.status).json({ error: result.error });
@@ -177,7 +183,7 @@ export function startServer(port: number, opts: ServerOptions): void {
       res.json({ ok: true, email: result.email, delivered: result.delivered });
     });
 
-    app.get('/api/report/:token', (req, res) => {
+    router.get('/api/report/:token', (req, res) => {
       const token = req.params.token;
       if (!isSafeToken(token)) {
         res.status(404).json({ error: 'Report not found.' });
@@ -191,7 +197,7 @@ export function startServer(port: number, opts: ServerOptions): void {
       res.json({ clinic: row.clinic, createdAt: row.createdAt, ranges: row.report });
     });
 
-    app.get('/r/:token', (req, res) => {
+    router.get('/r/:token', (req, res) => {
       if (!isSafeToken(req.params.token)) {
         res.status(404).send('Report not found.');
         return;
@@ -201,12 +207,12 @@ export function startServer(port: number, opts: ServerOptions): void {
   }
 
   // ---- Data routes (both modes; serve mode requires ?sid=) ----------------
-  app.get('/api/chats', (req, res) => {
+  router.get('/api/chats', (req, res) => {
     const store = requireStore(req, res);
     if (store) res.json(store.getChats());
   });
 
-  app.get('/api/chats/:jid/messages', (req, res) => {
+  router.get('/api/chats/:jid/messages', (req, res) => {
     const store = requireStore(req, res);
     if (!store) return;
     const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 500);
@@ -214,19 +220,19 @@ export function startServer(port: number, opts: ServerOptions): void {
     res.json(store.getMessages(req.params.jid, limit, offset));
   });
 
-  app.get('/api/search', (req, res) => {
+  router.get('/api/search', (req, res) => {
     const store = requireStore(req, res);
     if (!store) return;
     const q = String(req.query.q ?? '').trim();
     res.json(q ? store.searchMessages(q) : []);
   });
 
-  app.get('/api/stats', (req, res) => {
+  router.get('/api/stats', (req, res) => {
     const store = requireStore(req, res);
     if (store) res.json(store.getStats());
   });
 
-  app.get('/api/qr', (req, res) => {
+  router.get('/api/qr', (req, res) => {
     const conn = resolveConn(req);
     res.json({
       qr: conn?.getQR() ?? null,
@@ -235,7 +241,7 @@ export function startServer(port: number, opts: ServerOptions): void {
     });
   });
 
-  app.get('/api/pairing-code', (req, res) => {
+  router.get('/api/pairing-code', (req, res) => {
     const conn = resolveConn(req);
     res.json({
       pairingCode: conn?.getPairingCode() ?? null,
@@ -244,7 +250,7 @@ export function startServer(port: number, opts: ServerOptions): void {
     });
   });
 
-  app.get('/qr.png', async (req, res) => {
+  router.get('/qr.png', async (req, res) => {
     const qr = resolveConn(req)?.getQR();
     if (!qr) {
       res.status(404).send('No QR code available');
@@ -254,11 +260,15 @@ export function startServer(port: number, opts: ServerOptions): void {
     res.type('png').send(buffer);
   });
 
-  app.get('/qr', (_req, res) => {
+  router.get('/qr', (_req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'qr.html'));
   });
 
+  app.use(basePath || '/', router);
+
   app.listen(port, () => {
-    console.log(`[web] ${opts.mode} mode — UI available at http://localhost:${port}`);
+    console.log(
+      `[web] ${opts.mode} mode — UI available at http://localhost:${port}${basePath}/`
+    );
   });
 }
