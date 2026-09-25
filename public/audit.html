@@ -1386,19 +1386,43 @@
     });
   }
 
+  var params = new URLSearchParams(location.search);
+  var sidParam = params.get('sid');
+  var reportToken = params.get('report');
+  var frozenRanges = null;   // set once, when a stored report is loaded
+
+  // Two sources: a stored report (emailed link — the session it came from is
+  // long gone) or a live audit against an open session.
+  function fetchReport(range) {
+    if (reportToken) {
+      if (frozenRanges) {
+        return Promise.resolve(frozenRanges[range] || frozenRanges['30d']);
+      }
+      return fetch('api/report/' + encodeURIComponent(reportToken))
+        .then(function (res) {
+          if (!res.ok) throw new Error('this report link is no longer valid');
+          return res.json();
+        })
+        .then(function (data) {
+          frozenRanges = data.ranges;
+          return frozenRanges[range] || frozenRanges['30d'];
+        });
+    }
+    return fetch('api/audit?range=' + encodeURIComponent(range) +
+        (sidParam ? '&sid=' + encodeURIComponent(sidParam) : ''))
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      });
+  }
+
   function loadAudit(range) {
     currentRange = range;
     setActiveButton(range);
     document.getElementById('error').style.display = 'none';
     document.getElementById('dashboard').style.display = 'none';
     document.getElementById('loading').style.display = 'block';
-    var sidParam = new URLSearchParams(location.search).get('sid');
-    fetch('/api/audit?range=' + encodeURIComponent(range) +
-        (sidParam ? '&sid=' + encodeURIComponent(sidParam) : ''))
-      .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
+    fetchReport(range)
       .then(render)
       .catch(function (err) {
         document.getElementById('loading').style.display = 'none';
