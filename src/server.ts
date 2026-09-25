@@ -38,6 +38,15 @@ export type ServerOptions = LocalServerOptions | ServeServerOptions;
 
 const VALID_PHONE = /^\d{8,15}$/;
 
+/**
+ * Where /r/<token> sends the browser. That URL is one segment deeper than the
+ * page, and the app may be mounted under a base path, so the target is
+ * relative to the parent rather than absolute.
+ */
+export function reportRedirectTarget(token: string): string {
+  return `../audit.html?report=${encodeURIComponent(token)}`;
+}
+
 /** Report tokens are database keys, never path segments. */
 export function isSafeToken(token: string): boolean {
   return /^[A-Za-z0-9_-]{1,128}$/.test(token);
@@ -187,7 +196,7 @@ export function startServer(port: number, opts: ServerOptions): void {
         res.status(404).send('Report not found.');
         return;
       }
-      res.redirect(`audit.html?report=${encodeURIComponent(req.params.token)}`);
+      res.redirect(reportRedirectTarget(req.params.token));
     });
   }
 
