@@ -2,6 +2,11 @@
 // one paired WhatsApp device: its own auth dir + SQLite DB under DATA_DIR,
 // addressed by an unguessable token. Sessions are reaped after a TTL — the
 // device is logged out (unlinked) and all data is deleted.
+//
+// Sessions run concurrently: an inbound funnel has clinics arriving minutes
+// apart, and a new pairing must never disturb one already syncing. How many
+// run at once is capped by `maxSessions` — every one is a linked device
+// connecting from this server's IP, so keep it conservative.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +31,13 @@ export interface SessionManagerOptions {
   maxSessions: number;
   /** Max session creations per IP per hour. */
   createsPerIpPerHour: number;
+  /** Seam for tests: build the WhatsApp connection without opening a socket. */
+  createConnection?: (args: {
+    store: Store;
+    authDir: string;
+    pairingPhoneNumber?: string;
+    label: string;
+  }) => WaConnection;
 }
 
 export class SessionLimitError extends Error {}
@@ -68,14 +80,11 @@ export class SessionManager {
     const dir = path.join(this.opts.dataDir, 'sessions', id);
     fs.mkdirSync(dir, { recursive: true });
     const store = new Store(path.join(dir, 'db.sqlite'));
-    const conn = createWaConnection({
+    const conn = (this.opts.createConnection ?? createWaConnection)({
       store,
       authDir: path.join(dir, 'auth'),
       pairingPhoneNumber: phone ?? undefined,
       label: id.slice(0, 8),
-      // Single-active-session policy: the moment this WhatsApp links, every
-      // other session (linked or still pairing) is unlinked and purged.
-      onConnected: () => void this.evictOthers(id),
     });
     const session: Session = { id, phone, store, conn, dir, createdAt: now, lastAccess: now };
     this.sessions.set(id, session);
@@ -83,17 +92,6 @@ export class SessionManager {
       `[sessions] created ${id.slice(0, 8)}… (${phone ? `+${phone}` : 'QR'}) — ${this.sessions.size} active`
     );
     return session;
-  }
-
-  private async evictOthers(keepId: string): Promise<void> {
-    const others = [...this.sessions.keys()].filter((id) => id !== keepId);
-    if (others.length === 0) return;
-    console.log(`[sessions] ${keepId.slice(0, 8)}… linked — evicting ${others.length} other session(s).`);
-    await Promise.all(
-      others.map((id) =>
-        this.destroy(id).catch((err) => console.error('[sessions] eviction failed:', err))
-      )
-    );
   }
 
   get(id: string): Session | undefined {

@@ -87,7 +87,7 @@ so the rate is a floor, not the clinic's true conversion.
 
 Serve mode turns this into a public tool: a visiting clinic scans a QR on `/` (or falls back to a pairing code), syncs, and lands on their audit at `/audit.html?sid=…`.
 
-**Single-active-session policy:** the moment a new WhatsApp links, every other session — linked or still pairing — is unlinked and purged. Only one clinic is ever connected at a time; `MAX_SESSIONS` only caps how many visitors can be mid-pairing simultaneously.
+**Sessions run concurrently.** Clinics arriving minutes apart each get their own session, and a new pairing never disturbs one already syncing. `MAX_SESSIONS` is the real cap: past it, new visitors are told the tool is busy rather than anyone being evicted.
 
 ```bash
 docker build -t wa-lead-audit .
@@ -101,7 +101,7 @@ Environment variables (defaults in parentheses):
 - `PORT` (3000)
 - `DATA_DIR` (`./data` / `/data` in Docker) — per-session SQLite + auth dirs live here
 - `SESSION_TTL_MIN` (120) — after this, the session's device is **logged out of WhatsApp and all its data is deleted**
-- `MAX_SESSIONS` (10) — concurrent paired sessions; each one is a linked device connecting from your server's IP, keep this conservative
+- `MAX_SESSIONS` (3) — concurrent sessions; each one is a linked device connecting from your server's IP, so raise it only with evidence
 - `CREATES_PER_IP_PER_HOUR` (3) — session-creation rate limit
 
 How it stays safe(ish):

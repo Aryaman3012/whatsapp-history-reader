@@ -21,7 +21,7 @@ const rawArg = process.argv[2]?.trim();
 if (rawArg === 'serve') {
   const dataDir = process.env.DATA_DIR ?? './data';
   const ttlMin = parseInt(process.env.SESSION_TTL_MIN ?? '120', 10);
-  const maxSessions = parseInt(process.env.MAX_SESSIONS ?? '10', 10);
+  const maxSessions = parseInt(process.env.MAX_SESSIONS ?? '3', 10);
   const createsPerIpPerHour = parseInt(process.env.CREATES_PER_IP_PER_HOUR ?? '3', 10);
 
   const sessions = new SessionManager({
