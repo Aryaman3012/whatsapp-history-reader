@@ -1,11 +1,16 @@
 /** Express router exposing the lead conversion audit. */
 import { Router, type Request, type Response } from 'express';
 import { Store, type MessageRow } from '../store.js';
-import { computeAllAuditMetrics, type MetricOptions } from './metrics.js';
+import {
+  computeAllAuditMetrics,
+  type AuditReport,
+  type ConversationSummary,
+  type MetricOptions,
+} from './metrics.js';
 
 const MAX_MESSAGES_PER_CHAT = 100_000;
 
-const RANGE_SECONDS: Record<string, number> = {
+export const RANGE_SECONDS: Record<string, number> = {
   '30d': 30 * 86400,
   '90d': 90 * 86400,
   '1y': 365 * 86400,
@@ -48,6 +53,52 @@ function loadChatMessages(store: Store, chatJid: string, sinceTimestamp: number)
   return store.getMessages(chatJid, MAX_MESSAGES_PER_CHAT, 0, sinceTimestamp);
 }
 
+export class UnknownChatError extends Error {}
+
+/** The audit report as the API returns it: the metrics plus request context. */
+export interface AuditReportResponse extends AuditReport {
+  range: string;
+  rangeCutoffTimestamp: number;
+  conversations: Array<ConversationSummary & { chatName: string | null }>;
+}
+
+/**
+ * Build one report. Extracted from the route so the same code can be called
+ * at unlock time, when the report is frozen and stored.
+ */
+export function buildAuditReport(
+  store: Store,
+  range: string,
+  options: MetricOptions,
+  chatJid?: string
+): AuditReportResponse {
+  const rangeSeconds = RANGE_SECONDS[range];
+  if (rangeSeconds === undefined) throw new RangeError(`Invalid range '${range}'`);
+  const cutoffTimestamp = Math.floor(Date.now() / 1000) - rangeSeconds;
+
+  const chats = store.getChats();
+  const nameByJid = new Map(chats.map((c) => [c.id, c.display_name ?? c.chat_pn ?? c.id]));
+
+  let messages: MessageRow[];
+  if (chatJid) {
+    if (!nameByJid.has(chatJid)) throw new UnknownChatError(chatJid);
+    messages = loadChatMessages(store, chatJid, cutoffTimestamp);
+  } else {
+    messages = chats.flatMap((c) => loadChatMessages(store, c.id, cutoffTimestamp));
+  }
+
+  const report = computeAllAuditMetrics(messages, options, range);
+  return {
+    ...report,
+    range,
+    rangeCutoffTimestamp: cutoffTimestamp,
+    conversations: report.conversations.map((c) => ({
+      ...c,
+      chatName: c.chatJid ? nameByJid.get(c.chatJid) ?? c.chatJid : null,
+    })),
+  };
+}
+
 /**
  * The router is store-agnostic: `requireStore` resolves the request's Store
  * (session-scoped in serve mode, the single local store otherwise) and is
@@ -62,39 +113,17 @@ export function createAuditRouter(
     const store = requireStore(req, res);
     if (!store) return;
     const range = typeof req.query.range === 'string' ? req.query.range : '30d';
-    const rangeSeconds = RANGE_SECONDS[range];
-    if (rangeSeconds === undefined) {
+    if (RANGE_SECONDS[range] === undefined) {
       res.status(400).json({ error: `Invalid range '${range}'. Valid values: 30d, 90d, 1y` });
       return;
     }
-    const cutoffTimestamp = Math.floor(Date.now() / 1000) - rangeSeconds;
-
     const options = parseOptions(req.query as Record<string, unknown>);
-    const chats = store.getChats();
-    const nameByJid = new Map(chats.map((c) => [c.id, c.display_name ?? c.chat_pn ?? c.id]));
-
-    let messages: MessageRow[];
-    if (req.params.chatJid) {
-      const jid = req.params.chatJid;
-      if (!nameByJid.has(jid)) {
-        res.status(404).json({ error: 'Unknown chat' });
-        return;
-      }
-      messages = loadChatMessages(store, jid, cutoffTimestamp);
-    } else {
-      messages = chats.flatMap((c) => loadChatMessages(store, c.id, cutoffTimestamp));
+    try {
+      res.json(buildAuditReport(store, range, options, req.params.chatJid));
+    } catch (err) {
+      if (err instanceof UnknownChatError) res.status(404).json({ error: 'Unknown chat' });
+      else throw err;
     }
-
-    const report = computeAllAuditMetrics(messages, options, range);
-    res.json({
-      ...report,
-      range,
-      rangeCutoffTimestamp: cutoffTimestamp,
-      conversations: report.conversations.map((c) => ({
-        ...c,
-        chatName: c.chatJid ? nameByJid.get(c.chatJid) ?? c.chatJid : null,
-      })),
-    });
   });
 
   return auditRouter;
