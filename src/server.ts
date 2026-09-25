@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { Store } from './store.js';
 import type { WaConnection } from './connection.js';
 import { SessionManager, SessionLimitError, RateLimitError } from './sessions.js';
+import type { ReportStore } from './reports.js';
+import type { Mailer } from './mailer.js';
+import { unlockReport, resendReport, type UnlockDeps } from './unlock.js';
+import { postLead } from './leads.js';
 import { createAuditRouter } from './auditor/auditRoute.js';
 import QRCode from 'qrcode';
 
@@ -22,11 +26,22 @@ export interface LocalServerOptions {
 export interface ServeServerOptions {
   mode: 'serve';
   sessions: SessionManager;
+  reports: ReportStore;
+  mailer: Mailer;
+  /** Public origin + base path, e.g. https://heyanaya.ai/whatsapp-audit */
+  reportBaseUrl: string;
+  leadsEndpoint: string;
+  currency?: string;
 }
 
 export type ServerOptions = LocalServerOptions | ServeServerOptions;
 
 const VALID_PHONE = /^\d{8,15}$/;
+
+/** Report tokens are database keys, never path segments. */
+export function isSafeToken(token: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(token);
+}
 
 export function startServer(port: number, opts: ServerOptions): void {
   const app = express();
@@ -106,6 +121,73 @@ export function startServer(port: number, opts: ServerOptions): void {
     app.delete('/api/session/:sid', async (req, res) => {
       const destroyed = await opts.sessions.destroy(req.params.sid);
       res.json({ destroyed });
+    });
+
+    // ---- The gate: pair and sync first, then unlock the report ------------
+    const unlockDeps: UnlockDeps = {
+      sessions: {
+        get: (sid) => {
+          const s = opts.sessions.get(sid);
+          return s ? { store: s.store, phone: s.phone } : undefined;
+        },
+      },
+      reports: opts.reports,
+      mailer: opts.mailer,
+      sendLead: (payload) => postLead(opts.leadsEndpoint, payload),
+      reportBaseUrl: opts.reportBaseUrl,
+      currency: opts.currency,
+    };
+
+    function clientIp(req: express.Request): string {
+      return String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '')
+        .split(',')[0]
+        .trim();
+    }
+
+    app.post('/api/unlock', async (req, res) => {
+      const sid = String(req.body?.sid ?? '');
+      const result = await unlockReport(unlockDeps, sid, req.body, {
+        ip: clientIp(req) || null,
+        userAgent: String(req.headers['user-agent'] ?? '') || null,
+        referrer: String(req.headers.referer ?? '') || null,
+      });
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      // The link is deliberately absent: email is the only delivery path.
+      res.json({ ok: true, email: result.email, delivered: result.delivered });
+    });
+
+    app.post('/api/unlock/resend', async (req, res) => {
+      const result = await resendReport(unlockDeps, String(req.body?.sid ?? ''), req.body?.email);
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      res.json({ ok: true, email: result.email, delivered: result.delivered });
+    });
+
+    app.get('/api/report/:token', (req, res) => {
+      const token = req.params.token;
+      if (!isSafeToken(token)) {
+        res.status(404).json({ error: 'Report not found.' });
+        return;
+      }
+      const row = opts.reports.get(token);
+      if (!row) {
+        res.status(404).json({ error: 'Report not found.' });
+        return;
+      }
+      res.json({ clinic: row.clinic, createdAt: row.createdAt, ranges: row.report });
+    });
+
+    app.get('/r/:token', (req, res) => {
+      if (!isSafeToken(req.params.token)) {
+        res.status(404).send('Report not found.');
+        return;
+      }
+      res.redirect(`audit.html?report=${encodeURIComponent(req.params.token)}`);
     });
   }
 

@@ -3,10 +3,14 @@
 //   npm run dev -- 919876543210    local: pair this number via code, sync into ./whatsapp.db
 //   npm run dev                    local: pair via QR, sync into ./whatsapp.db
 //   npm run dev -- serve           public free tool: multi-tenant ephemeral sessions
+import path from 'node:path';
 import { Store } from './store.js';
 import { createWaConnection } from './connection.js';
 import { SessionManager } from './sessions.js';
 import { startServer } from './server.js';
+import { ReportStore } from './reports.js';
+import { createMailer } from './mailer.js';
+import { LEADS_ENDPOINT } from './leads.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
@@ -26,7 +30,33 @@ if (rawArg === 'serve') {
     maxSessions,
     createsPerIpPerHour,
   });
-  startServer(PORT, { mode: 'serve', sessions });
+  // Reports outlive the sessions that produced them: the WhatsApp data is
+  // deleted at the TTL, the computed report is kept.
+  const reports = new ReportStore(path.join(dataDir, 'reports.db'));
+  const currency = process.env.MAIL_CURRENCY ?? 'AED';
+  const mailer = createMailer({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined,
+    secure: process.env.SMTP_SECURE !== 'false',
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    from: process.env.MAIL_FROM ?? 'reports@heyanaya.ai',
+    replyTo: process.env.MAIL_REPLY_TO,
+    currency,
+  });
+  void mailer.verify().then((ok) => {
+    if (!ok) console.error('[app] SMTP is not usable — unlocks will record delivery failures.');
+  });
+
+  startServer(PORT, {
+    mode: 'serve',
+    sessions,
+    reports,
+    mailer,
+    reportBaseUrl: process.env.REPORT_BASE_URL ?? `http://localhost:${PORT}`,
+    leadsEndpoint: process.env.LEADS_ENDPOINT ?? LEADS_ENDPOINT,
+    currency,
+  });
   console.log(
     `[app] Serve mode — sessions under ${dataDir}, TTL ${ttlMin}min, ` +
       `max ${maxSessions} concurrent, ${createsPerIpPerHour} creations/IP/hour.`
@@ -35,6 +65,7 @@ if (rawArg === 'serve') {
   const shutdown = async (signal: string) => {
     console.log(`[app] ${signal} — unlinking and purging all sessions...`);
     await sessions.shutdown();
+    reports.close();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
@@ -54,8 +85,11 @@ if (rawArg === 'serve') {
     console.log(`[app] Pairing-code mode enabled for +${digits}.`);
   }
 
-  const store = new Store('./whatsapp.db');
-  console.log('[app] SQLite store initialized (./whatsapp.db, WAL mode).');
+  // Offline mode can point at an explicit DB: `npm run dev -- offline /path/db.sqlite`
+  const dbPath =
+    offlineMode && process.argv[3]?.trim() ? process.argv[3].trim() : './whatsapp.db';
+  const store = new Store(dbPath);
+  console.log(`[app] SQLite store initialized (${dbPath}, WAL mode).`);
 
   const conn = offlineMode
     ? null
