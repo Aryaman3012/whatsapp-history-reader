@@ -122,6 +122,36 @@ Mail (the report is delivered by email and nowhere else, so none of this is opti
 
 With no `SMTP_HOST` set the mailer logs each message instead of sending it, which is how the unlock flow is exercisable locally.
 
+## Keeping it up
+
+`GET /health` (so `https://heyanaya.ai/whatsapp-audit/health` in production) is the
+liveness check. It answers without touching a session or the store:
+
+```json
+{"ok":true,"mode":"serve","uptimeSeconds":8421,"mail":"ok","sessions":{"active":1,"max":3},"degraded":[]}
+```
+
+It returns **503 when SMTP is unusable**, not just when the process is dying. A serve
+process with dead mail still accepts unlocks and still tells each clinic the report was
+sent — that is the outage worth paging on, and a plain "is the port open" check misses it.
+SMTP is re-verified every five minutes, so a password revoked at noon shows up by 12:05
+rather than at the next restart. `mail: "unverified"` is the startup race and stays 200.
+
+Point an external uptime check (healthchecks.io, UptimeRobot, whatever you already use) at
+that URL every few minutes and send the alert to the same Slack channel as the leads.
+Without it the failure is silent: the pitch page keeps loading, ads keep spending, and the
+only symptom is that leads stop arriving.
+
+The systemd unit restarts on any exit (`Restart=always`) and has no start limit, so a bad
+`/etc/whatsapp-audit.env` produces a retry loop rather than a unit that gives up and stays
+dead. `MemoryMax=1G` keeps a session leak from taking the whole VPS down with it. Remember
+`systemctl enable whatsapp-audit` — without it none of this survives a reboot.
+
+Baileys sockets reconnect on their own with a 2s→30s backoff, except after a `loggedOut`
+(401), where reconnecting is both futile and a good way to escalate a ban. Sessions are
+still deliberately short-lived: the 2h TTL unlinks the device and deletes its WhatsApp
+data. "Always up" applies to the service, never to a clinic's connection.
+
 ## Reports
 
 A visitor pairs and syncs first; the report is gated behind a short form (clinic, name, mobile, email)

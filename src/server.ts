@@ -32,11 +32,57 @@ export interface ServeServerOptions {
   reportBaseUrl: string;
   leadsEndpoint: string;
   currency?: string;
+  /** Last known SMTP verify result; null while unverified. Drives /health. */
+  mailHealth?: () => boolean | null;
 }
 
 export type ServerOptions = LocalServerOptions | ServeServerOptions;
 
 const VALID_PHONE = /^\d{8,15}$/;
+
+export interface HealthInput {
+  mode: 'local' | 'serve';
+  uptimeSeconds: number;
+  /** null = verify() has not answered yet. */
+  mailOk: boolean | null;
+  sessions: { active: number; max: number } | null;
+}
+
+export interface HealthBody {
+  ok: boolean;
+  mode: 'local' | 'serve';
+  uptimeSeconds: number;
+  mail: 'ok' | 'unverified' | 'error' | 'n/a';
+  sessions?: { active: number; max: number };
+  degraded: string[];
+}
+
+/**
+ * What an uptime check sees. A live HTTP server is not the same as a working
+ * tool: the report is emailed and nowhere else, so a serve process with dead
+ * SMTP takes unlocks and delivers nothing. That reports 503 so an external
+ * check pages, while an unverified mailer at boot does not.
+ */
+export function buildHealthPayload(input: HealthInput): { status: number; body: HealthBody } {
+  const mail: HealthBody['mail'] =
+    input.mode === 'local'
+      ? 'n/a'
+      : input.mailOk === null
+        ? 'unverified'
+        : input.mailOk
+          ? 'ok'
+          : 'error';
+  const degraded = mail === 'error' ? ['smtp'] : [];
+  const body: HealthBody = {
+    ok: degraded.length === 0,
+    mode: input.mode,
+    uptimeSeconds: Math.round(input.uptimeSeconds),
+    mail,
+    degraded,
+  };
+  if (input.sessions) body.sessions = input.sessions;
+  return { status: degraded.length === 0 ? 200 : 503, body };
+}
 
 /**
  * Where /r/<token> sends the browser. That URL is one segment deeper than the
@@ -80,6 +126,21 @@ export function startServer(port: number, opts: ServerOptions): void {
   // URLs, so nothing else needs to know where it is mounted.
   const basePath = (process.env.BASE_PATH ?? '').replace(/\/+$/, '');
   const router = express.Router();
+
+  // Registered before anything else: an uptime check must not depend on the
+  // static mount, a session, or the store.
+  router.get('/health', (_req, res) => {
+    const health = buildHealthPayload({
+      mode: opts.mode,
+      uptimeSeconds: process.uptime(),
+      mailOk: opts.mode === 'serve' ? (opts.mailHealth?.() ?? null) : null,
+      sessions:
+        opts.mode === 'serve'
+          ? { active: opts.sessions.count(), max: opts.sessions.maxSessions() }
+          : null,
+    });
+    res.status(health.status).json(health.body);
+  });
 
   // Resolve which Store a request may read. In serve mode a missing/unknown
   // sid is a hard 401/404 — there is no cross-session access path.

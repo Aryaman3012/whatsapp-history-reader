@@ -1,6 +1,11 @@
 [Unit]
 Description=whatsapp-audit (free WhatsApp lead audit, served under heyanaya.ai/whatsapp-audit)
 After=network.target
+# Never stop trying. The default start limit (5 starts / 10s) would leave the
+# unit dead for good after a transient boot failure — and this service refuses
+# to start on a bad SMTP config, so a typo in the env file would otherwise take
+# the tool down until someone noticed by hand.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -8,7 +13,8 @@ User=whatsapp-audit
 Group=whatsapp-audit
 WorkingDirectory=/opt/whatsapp-history-reader
 ExecStart=/usr/bin/node /opt/whatsapp-history-reader/dist/index.js serve
-Restart=on-failure
+# always, not on-failure: a clean exit that nobody asked for is still an outage.
+Restart=always
 RestartSec=5
 
 # Read secrets from /etc/whatsapp-audit.env (root-owned, 600).
@@ -29,6 +35,10 @@ Environment=DATA_DIR=/var/lib/whatsapp-audit
 Environment=SESSION_TTL_MIN=120
 Environment=MAX_SESSIONS=3
 Environment=CREATES_PER_IP_PER_HOUR=3
+
+# One runaway session must not OOM the box that also serves the site and
+# leads-api; systemd kills this service instead.
+MemoryMax=1G
 
 # Hardening
 NoNewPrivileges=true

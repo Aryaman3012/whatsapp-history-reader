@@ -13,6 +13,7 @@ import { createMailer, resolveMailConfig, resolveReportBaseUrl } from './mailer.
 import { LEADS_ENDPOINT } from './leads.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const MAIL_CHECK_INTERVAL_MS = 5 * 60_000;
 
 console.log('[app] WhatsApp History Reader (read-only) starting...');
 
@@ -40,9 +41,25 @@ if (rawArg === 'serve') {
   const reportBaseUrl = resolveReportBaseUrl(process.env);
   const currency = mailConfig.currency ?? 'AED';
   const mailer = createMailer(mailConfig);
-  void mailer.verify().then((ok) => {
-    if (!ok) console.error('[app] SMTP is not usable — unlocks will record delivery failures.');
-  });
+  // Verified on a loop, not just at boot: SMTP dies mid-life (expired app
+  // password, revoked account) and email is the only way a report reaches
+  // anyone, so /health has to know the current answer rather than the one
+  // from startup.
+  let mailOk: boolean | null = null;
+  const checkMail = (): void => {
+    void mailer
+      .verify()
+      .catch(() => false)
+      .then((ok) => {
+        if (ok !== mailOk) {
+          if (ok) console.log('[app] SMTP is usable.');
+          else console.error('[app] SMTP is not usable — unlocks will record delivery failures.');
+        }
+        mailOk = ok;
+      });
+  };
+  checkMail();
+  setInterval(checkMail, MAIL_CHECK_INTERVAL_MS).unref();
 
   startServer(PORT, {
     mode: 'serve',
@@ -52,6 +69,7 @@ if (rawArg === 'serve') {
     reportBaseUrl,
     leadsEndpoint: process.env.LEADS_ENDPOINT ?? LEADS_ENDPOINT,
     currency,
+    mailHealth: () => mailOk,
   });
   console.log(
     `[app] Serve mode — sessions under ${dataDir}, TTL ${ttlMin}min, ` +

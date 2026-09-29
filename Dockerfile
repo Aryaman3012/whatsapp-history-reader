@@ -37,4 +37,9 @@ RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 3000
 
+# Liveness that matches /health: a 503 (dead SMTP) is unhealthy, because the
+# report is emailed and nowhere else. No curl in the image — node has fetch.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "const u='http://127.0.0.1:'+(process.env.PORT||3000)+(process.env.BASE_PATH||'')+'/health';fetch(u).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "dist/index.js", "serve"]

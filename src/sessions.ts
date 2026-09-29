@@ -104,6 +104,11 @@ export class SessionManager {
     return this.sessions.size;
   }
 
+  /** The concurrency cap, so /health can report 2/3 rather than a bare 2. */
+  maxSessions(): number {
+    return this.opts.maxSessions;
+  }
+
   /** Unlink the device (best effort), close everything, delete all data. */
   async destroy(id: string): Promise<boolean> {
     const s = this.sessions.get(id);
