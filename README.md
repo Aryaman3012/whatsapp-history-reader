@@ -108,6 +108,8 @@ Environment variables (defaults in parentheses):
 - `SESSION_TTL_MIN` (120) — after this, the session's device is **logged out of WhatsApp and all its data is deleted**
 - `MAX_SESSIONS` (3) — concurrent sessions; each one is a linked device connecting from your server's IP, so raise it only with evidence
 - `CREATES_PER_IP_PER_HOUR` (3) — session-creation rate limit
+- `PAIRING_DEADLINE_MIN` (10) — an unpaired session loses its slot after this
+- `UNPAIRED_GRACE_MIN` (5) — a paired session may be disconnected this long before it loses its slot
 - `BASE_PATH` (empty) — mount the whole tool under a path, e.g. `/whatsapp-audit` behind nginx
 - `REPORT_BASE_URL` (`http://localhost:$PORT`) — public origin **plus base path**, e.g. `https://heyanaya.ai/whatsapp-audit`. This is what goes in the emailed report link, so a wrong value emails dead links.
 - `LEADS_ENDPOINT` (`https://leads.cashflohero.ai/v1/leads`) — where unlocks are captured as leads
@@ -128,7 +130,7 @@ With no `SMTP_HOST` set the mailer logs each message instead of sending it, whic
 liveness check. It answers without touching a session or the store:
 
 ```json
-{"ok":true,"mode":"serve","uptimeSeconds":8421,"mail":"ok","sessions":{"active":1,"max":3},"degraded":[]}
+{"ok":true,"mode":"serve","uptimeSeconds":8421,"mail":"ok","sessions":{"active":1,"max":3,"paired":1},"degraded":[]}
 ```
 
 It returns **503 when SMTP is unusable**, not just when the process is dying. A serve
@@ -136,6 +138,10 @@ process with dead mail still accepts unlocks and still tells each clinic the rep
 sent — that is the outage worth paging on, and a plain "is the port open" check misses it.
 SMTP is re-verified every five minutes, so a password revoked at noon shows up by 12:05
 rather than at the next restart. `mail: "unverified"` is the startup race and stays 200.
+
+It also returns **503 when every slot is held by a session that never paired**
+(`degraded: ["capacity"]`). That is the other outage that looks healthy: the process is up,
+mail works, and every clinic arriving is told the tool is busy.
 
 Point an external uptime check (healthchecks.io, UptimeRobot, whatever you already use) at
 that URL every few minutes and send the alert to the same Slack channel as the leads.
@@ -148,9 +154,18 @@ dead. `MemoryMax=1G` keeps a session leak from taking the whole VPS down with it
 `systemctl enable whatsapp-audit` — without it none of this survives a reboot.
 
 Baileys sockets reconnect on their own with a 2s→30s backoff, except after a `loggedOut`
-(401), where reconnecting is both futile and a good way to escalate a ban. Sessions are
-still deliberately short-lived: the 2h TTL unlinks the device and deletes its WhatsApp
-data. "Always up" applies to the service, never to a clinic's connection.
+(401), where reconnecting is both futile and a good way to escalate a ban. `connectTimeoutMs`
+is 30s so a connect that will never complete fails into that backoff instead of hanging.
+
+A slot is only worth holding while the session is paired, so the reaper ends a session
+early in three cases besides the TTL: it never paired within `PAIRING_DEADLINE_MIN`
+(default 10) — an abandoned QR screen; it paired and then went quiet for longer than
+`UNPAIRED_GRACE_MIN` (default 5) — a reconnect loop that will not recover; or WhatsApp
+logged it out. Without these, `MAX_SESSIONS` slots fill with sessions that can never
+produce a report.
+
+Sessions are still deliberately short-lived: the 2h TTL unlinks the device and deletes its
+WhatsApp data. "Always up" applies to the service, never to a clinic's connection.
 
 ## Reports
 

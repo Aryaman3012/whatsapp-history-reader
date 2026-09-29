@@ -260,6 +260,9 @@ export function createWaConnection(opts: {
       shouldSyncHistoryMessage: () => true,
       markOnlineOnConnect: false,
       printQRInTerminal: false,
+      // Fail fast into the backoff above rather than hanging on a connect that
+      // will never complete; a wedged socket holds a session slot.
+      connectTimeoutMs: 30_000,
     });
     sock = s;
 

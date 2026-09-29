@@ -21,13 +21,13 @@ test('health is 200 while the tool can actually deliver a report', () => {
     mode: 'serve',
     uptimeSeconds: 42.7,
     mailOk: true,
-    sessions: { active: 1, max: 3 },
+    sessions: { active: 1, max: 3, paired: 1 },
   });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.ok, true);
   assert.equal(ok.body.mail, 'ok');
   assert.equal(ok.body.uptimeSeconds, 43);
-  assert.deepEqual(ok.body.sessions, { active: 1, max: 3 });
+  assert.deepEqual(ok.body.sessions, { active: 1, max: 3, paired: 1 });
   assert.deepEqual(ok.body.degraded, []);
 });
 
@@ -38,7 +38,7 @@ test('health is 503 when SMTP is dead, because email is the only delivery path',
     mode: 'serve',
     uptimeSeconds: 10,
     mailOk: false,
-    sessions: { active: 0, max: 3 },
+    sessions: { active: 0, max: 3, paired: 0 },
   });
   assert.equal(bad.status, 503);
   assert.equal(bad.body.ok, false);
@@ -52,7 +52,7 @@ test('health does not page during the startup verify race', () => {
     mode: 'serve',
     uptimeSeconds: 1,
     mailOk: null,
-    sessions: { active: 0, max: 3 },
+    sessions: { active: 0, max: 3, paired: 0 },
   });
   assert.equal(starting.status, 200);
   assert.equal(starting.body.mail, 'unverified');
@@ -69,4 +69,28 @@ test('local mode has no mail path to be unhealthy about', () => {
   assert.equal(local.status, 200);
   assert.equal(local.body.mail, 'n/a');
   assert.equal(local.body.sessions, undefined);
+});
+
+test('health degrades when every slot is held by an unpaired session', () => {
+  // The process is fine and mail is fine, but the tool is turning real clinics
+  // away because three abandoned QR screens own all the slots.
+  const full = buildHealthPayload({
+    mode: 'serve',
+    uptimeSeconds: 900,
+    mailOk: true,
+    sessions: { active: 3, max: 3, paired: 0 },
+  });
+  assert.equal(full.status, 503);
+  assert.deepEqual(full.body.degraded, ['capacity']);
+});
+
+test('a full tool that is actually working is healthy', () => {
+  const busy = buildHealthPayload({
+    mode: 'serve',
+    uptimeSeconds: 900,
+    mailOk: true,
+    sessions: { active: 3, max: 3, paired: 3 },
+  });
+  assert.equal(busy.status, 200);
+  assert.deepEqual(busy.body.degraded, []);
 });

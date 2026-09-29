@@ -35,6 +35,9 @@ Environment=DATA_DIR=/var/lib/whatsapp-audit
 Environment=SESSION_TTL_MIN=120
 Environment=MAX_SESSIONS=3
 Environment=CREATES_PER_IP_PER_HOUR=3
+# A slot is only worth holding while the session is paired.
+Environment=PAIRING_DEADLINE_MIN=10
+Environment=UNPAIRED_GRACE_MIN=5
 
 # One runaway session must not OOM the box that also serves the site and
 # leads-api; systemd kills this service instead.

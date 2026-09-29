@@ -198,7 +198,7 @@ async function poll() {
     const res = await fetch('api/session/' + encodeURIComponent(sid));
     if (res.status === 404) {
       clearInterval(pollTimer);
-      $('pair-error').textContent = 'Session expired and its data was deleted. Reload to start over.';
+      $('pair-error').textContent = 'This session ended and its data was deleted — pairing has a time limit. Reload to start over.';
       return;
     }
     const s = await res.json();

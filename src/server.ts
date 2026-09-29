@@ -45,7 +45,7 @@ export interface HealthInput {
   uptimeSeconds: number;
   /** null = verify() has not answered yet. */
   mailOk: boolean | null;
-  sessions: { active: number; max: number } | null;
+  sessions: { active: number; max: number; paired: number } | null;
 }
 
 export interface HealthBody {
@@ -53,7 +53,7 @@ export interface HealthBody {
   mode: 'local' | 'serve';
   uptimeSeconds: number;
   mail: 'ok' | 'unverified' | 'error' | 'n/a';
-  sessions?: { active: number; max: number };
+  sessions?: { active: number; max: number; paired: number };
   degraded: string[];
 }
 
@@ -72,7 +72,13 @@ export function buildHealthPayload(input: HealthInput): { status: number; body: 
         : input.mailOk
           ? 'ok'
           : 'error';
-  const degraded = mail === 'error' ? ['smtp'] : [];
+  const degraded: string[] = [];
+  if (mail === 'error') degraded.push('smtp');
+  // Full of sessions that never paired is an outage wearing a healthy face:
+  // the process is fine, mail is fine, and every real clinic is turned away.
+  if (input.sessions && input.sessions.active >= input.sessions.max && input.sessions.paired === 0) {
+    degraded.push('capacity');
+  }
   const body: HealthBody = {
     ok: degraded.length === 0,
     mode: input.mode,
@@ -136,7 +142,11 @@ export function startServer(port: number, opts: ServerOptions): void {
       mailOk: opts.mode === 'serve' ? (opts.mailHealth?.() ?? null) : null,
       sessions:
         opts.mode === 'serve'
-          ? { active: opts.sessions.count(), max: opts.sessions.maxSessions() }
+          ? {
+              active: opts.sessions.count(),
+              max: opts.sessions.maxSessions(),
+              paired: opts.sessions.pairedCount(),
+            }
           : null,
     });
     res.status(health.status).json(health.body);

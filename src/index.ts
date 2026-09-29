@@ -24,12 +24,16 @@ if (rawArg === 'serve') {
   const ttlMin = parseInt(process.env.SESSION_TTL_MIN ?? '120', 10);
   const maxSessions = parseInt(process.env.MAX_SESSIONS ?? '3', 10);
   const createsPerIpPerHour = parseInt(process.env.CREATES_PER_IP_PER_HOUR ?? '3', 10);
+  const pairingDeadlineMin = parseInt(process.env.PAIRING_DEADLINE_MIN ?? '10', 10);
+  const unpairedGraceMin = parseInt(process.env.UNPAIRED_GRACE_MIN ?? '5', 10);
 
   const sessions = new SessionManager({
     dataDir,
     ttlMs: ttlMin * 60_000,
     maxSessions,
     createsPerIpPerHour,
+    pairingDeadlineMs: pairingDeadlineMin * 60_000,
+    unpairedGraceMs: unpairedGraceMin * 60_000,
   });
   // Reports outlive the sessions that produced them: the WhatsApp data is
   // deleted at the TTL, the computed report is kept.
@@ -73,7 +77,8 @@ if (rawArg === 'serve') {
   });
   console.log(
     `[app] Serve mode — sessions under ${dataDir}, TTL ${ttlMin}min, ` +
-      `max ${maxSessions} concurrent, ${createsPerIpPerHour} creations/IP/hour.`
+      `max ${maxSessions} concurrent, ${createsPerIpPerHour} creations/IP/hour, ` +
+      `pair within ${pairingDeadlineMin}min, ${unpairedGraceMin}min grace once paired.`
   );
 
   const shutdown = async (signal: string) => {
