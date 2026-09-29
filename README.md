@@ -110,6 +110,9 @@ Environment variables (defaults in parentheses):
 - `CREATES_PER_IP_PER_HOUR` (3) — session-creation rate limit
 - `PAIRING_DEADLINE_MIN` (10) — an unpaired session loses its slot after this
 - `UNPAIRED_GRACE_MIN` (5) — a paired session may be disconnected this long before it loses its slot
+- `WAHA_URL` / `WAHA_API_KEY` — fallback engine sidecar; unset means no fallback
+- `WAHA_ENGINE` (WEBJS), `WAHA_MAX_CHATS` (500), `WAHA_MAX_MESSAGES` (2000), `WAHA_HISTORY_DAYS` (90)
+- `HANDSHAKE_GRACE_SEC` (20) — how long Baileys gets to produce a QR before the fallback takes over
 - `BASE_PATH` (empty) — mount the whole tool under a path, e.g. `/whatsapp-audit` behind nginx
 - `REPORT_BASE_URL` (`http://localhost:$PORT`) — public origin **plus base path**, e.g. `https://heyanaya.ai/whatsapp-audit`. This is what goes in the emailed report link, so a wrong value emails dead links.
 - `LEADS_ENDPOINT` (`https://leads.cashflohero.ai/v1/leads`) — where unlocks are captured as leads
@@ -123,6 +126,45 @@ Mail (the report is delivered by email and nowhere else, so none of this is opti
 - `MAIL_CURRENCY` (`AED`) — currency shown in the email's revenue figure
 
 With no `SMTP_HOST` set the mailer logs each message instead of sending it, which is how the unlock flow is exercisable locally.
+
+## Fallback engine (WAHA)
+
+Baileys announces a hardcoded WhatsApp Web client version during the handshake. When
+WhatsApp retires that version the handshake is refused — status 405, no QR is ever issued,
+and the visitor sits on an empty pairing page until someone upgrades the package. That has
+already happened once here (`badf053`, rc13 → rc14).
+
+So there is a second engine. [WAHA](https://waha.devlike.pro) runs as a Docker sidecar on
+the `WEBJS` engine, which drives a real Chromium against web.whatsapp.com and therefore
+picks up whatever client version the page serves — there is no baked-in version to retire.
+
+```bash
+export WAHA_API_KEY=$(openssl rand -hex 24)
+docker compose -f docker-compose.waha.yml up -d
+```
+
+Then set `WAHA_URL=http://127.0.0.1:3001` and the same `WAHA_API_KEY` in
+`/etc/whatsapp-audit.env`. With `WAHA_URL` unset there is simply no fallback; with it set
+but no key, the service refuses to start, because an unauthenticated WAHA is an open
+WhatsApp gateway on the box.
+
+**How the handover works.** Every session starts on Baileys. If it has produced neither a
+QR nor a pairing code within `HANDSHAKE_GRACE_SEC` (default 20) and has not connected, the
+primary is torn down and a WAHA session takes over; the visitor just sees the QR arrive a
+beat later. Failover happens only before pairing — afterwards the credentials belong to the
+engine that paired, so a switch would mean asking the clinic to scan again. A primary that
+produced a QR, a pairing code, or a connection is never touched.
+
+**What the fallback costs.** WAHA pulls history per chat over REST rather than receiving
+Baileys' bulk `messaging-history.set` dump, so a fallback sync is slower and bounded by
+`WAHA_MAX_CHATS` (500), `WAHA_MAX_MESSAGES` (2000 per chat) and `WAHA_HISTORY_DAYS` (90).
+Chromium also wants memory — the compose file caps the sidecar at 2GB, which is why it
+belongs on a box with room rather than alongside a 1GB-capped service.
+
+One translation detail worth knowing: WAHA's browser engine addresses contacts as `@c.us`,
+while the audit only counts a chat as a lead when its jid ends in `@s.whatsapp.net` or
+`@lid`. The adapter rewrites jids on the way in — without it a WAHA-sourced audit would
+report zero leads while looking like it synced perfectly.
 
 ## Keeping it up
 

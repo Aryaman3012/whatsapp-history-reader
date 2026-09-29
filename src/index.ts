@@ -7,6 +7,8 @@ import path from 'node:path';
 import { Store } from './store.js';
 import { createWaConnection } from './connection.js';
 import { SessionManager } from './sessions.js';
+import { createWahaConnection, resolveWahaConfig } from './engines/waha.js';
+import { createFailoverConnection } from './failover.js';
 import { startServer } from './server.js';
 import { ReportStore } from './reports.js';
 import { createMailer, resolveMailConfig, resolveReportBaseUrl } from './mailer.js';
@@ -14,6 +16,8 @@ import { LEADS_ENDPOINT } from './leads.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const MAIL_CHECK_INTERVAL_MS = 5 * 60_000;
+/** How long Baileys gets to produce a QR before the fallback engine takes over. */
+const HANDSHAKE_GRACE_MS = parseInt(process.env.HANDSHAKE_GRACE_SEC ?? '20', 10) * 1000;
 
 console.log('[app] WhatsApp History Reader (read-only) starting...');
 
@@ -27,6 +31,12 @@ if (rawArg === 'serve') {
   const pairingDeadlineMin = parseInt(process.env.PAIRING_DEADLINE_MIN ?? '10', 10);
   const unpairedGraceMin = parseInt(process.env.UNPAIRED_GRACE_MIN ?? '5', 10);
 
+  // Fallback engine. Baileys is refused at the handshake often enough that a
+  // visitor can sit on an empty pairing page; when that happens WAHA's
+  // browser-based engine serves the session instead. Nothing is paired at that
+  // point, so the visitor just sees the QR arrive a beat later.
+  const waha = resolveWahaConfig(process.env);
+
   const sessions = new SessionManager({
     dataDir,
     ttlMs: ttlMin * 60_000,
@@ -34,6 +44,26 @@ if (rawArg === 'serve') {
     createsPerIpPerHour,
     pairingDeadlineMs: pairingDeadlineMin * 60_000,
     unpairedGraceMs: unpairedGraceMin * 60_000,
+    createConnection: (a) => {
+      const primary = createWaConnection(a);
+      if (!waha) return primary;
+      return createFailoverConnection({
+        primary,
+        handshakeGraceMs: HANDSHAKE_GRACE_MS,
+        label: a.label ?? 'session',
+        createFallback: () => {
+          const fallback = createWahaConnection({
+            store: a.store,
+            sessionName: `audit-${a.label ?? Date.now()}`,
+            config: waha,
+            pairingPhoneNumber: a.pairingPhoneNumber,
+            label: a.label,
+          });
+          void fallback.start().catch((err) => console.error('[waha] start failed:', err));
+          return fallback;
+        },
+      });
+    },
   });
   // Reports outlive the sessions that produced them: the WhatsApp data is
   // deleted at the TTL, the computed report is kept.
@@ -78,7 +108,10 @@ if (rawArg === 'serve') {
   console.log(
     `[app] Serve mode — sessions under ${dataDir}, TTL ${ttlMin}min, ` +
       `max ${maxSessions} concurrent, ${createsPerIpPerHour} creations/IP/hour, ` +
-      `pair within ${pairingDeadlineMin}min, ${unpairedGraceMin}min grace once paired.`
+      `pair within ${pairingDeadlineMin}min, ${unpairedGraceMin}min grace once paired. ` +
+      (waha
+        ? `Fallback engine: WAHA ${waha.engine} at ${waha.baseUrl} after ${HANDSHAKE_GRACE_MS / 1000}s.`
+        : 'No fallback engine configured (set WAHA_URL).')
   );
 
   const shutdown = async (signal: string) => {

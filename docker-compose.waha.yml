@@ -1,0 +1,31 @@
+# The fallback engine, as a sidecar next to the audit tool.
+#
+#   docker compose -f docker-compose.waha.yml up -d
+#
+# Bound to loopback on purpose: WAHA is an authenticated WhatsApp gateway, and
+# nothing outside this host has any business reaching it. The audit service
+# talks to it over 127.0.0.1 and never proxies it through nginx.
+services:
+  waha:
+    image: devlikeapro/waha
+    container_name: waha
+    restart: always
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      # Same plain value the audit service sends as X-Api-Key. WAHA also accepts
+      # WAHA_API_KEY=sha512:<hex> here, in which case the service keeps the plain
+      # key and the container only ever sees the hash.
+      WAHA_API_KEY: ${WAHA_API_KEY:?set WAHA_API_KEY in the environment}
+      # Browser-based engine: it loads web.whatsapp.com and picks up whatever
+      # client version the page serves, so it is not vulnerable to the hardcoded
+      # version rejection that stops Baileys at the handshake.
+      WHATSAPP_DEFAULT_ENGINE: WEBJS
+    volumes:
+      - waha-sessions:/app/.sessions
+    # Chromium is memory-hungry; keep the sidecar from taking the VPS down with
+    # the site and leads-api on it.
+    mem_limit: 2g
+
+volumes:
+  waha-sessions:
