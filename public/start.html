@@ -19,12 +19,13 @@
   h1 { font-size: 22px; margin-bottom: 8px; }
   .sub { color: var(--dim); font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
   label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 6px; }
-  input[type=tel] {
+  .field { margin-bottom: 12px; }
+  input[type=tel], input[type=text], input[type=email], input[type=number] {
     width: 100%; padding: 12px 14px; font-size: 16px; background: var(--bg);
     border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none;
     font-family: "SF Mono", Menlo, monospace;
   }
-  input[type=tel]:focus { border-color: var(--accent); }
+  input[type=tel]:focus, input[type=text]:focus, input[type=email]:focus, input[type=number]:focus { border-color: var(--accent); }
   button {
     width: 100%; margin-top: 16px; padding: 12px; font-size: 15px; font-weight: 600;
     background: var(--accent); color: #fff; border: none; border-radius: 8px; cursor: pointer;
@@ -90,13 +91,38 @@
     <p class="hint"><span class="status-dot on"></span><b>Connected.</b> Syncing your chat history — this stays on this server only and is deleted automatically.</p>
     <div class="progress-track"><div class="progress-fill" id="sync-fill"></div></div>
     <div class="stats-line" id="sync-stats">0 chats · 0 messages</div>
-    <button id="audit-btn" disabled>Open my audit</button>
+    <button id="audit-btn" disabled>Get my report</button>
+  </div>
+
+  <div id="step-unlock" class="step">
+    <h1 style="font-size:19px;margin-bottom:6px">Where should we send your report?</h1>
+    <p class="sub">We email it — it isn't shown here. Your WhatsApp connection is removed either way.</p>
+    <div class="field"><label for="u-clinic">Clinic name</label><input id="u-clinic" type="text" autocomplete="organization"></div>
+    <div class="field"><label for="u-name">Your name</label><input id="u-name" type="text" autocomplete="name"></div>
+    <div class="field"><label for="u-phone">Mobile (country code first)</label><input id="u-phone" type="tel" autocomplete="tel" placeholder="9715XXXXXXXX"></div>
+    <div class="field"><label for="u-email">Email</label><input id="u-email" type="email" autocomplete="email"></div>
+    <div class="field"><label for="u-ticket">Average treatment value (optional)</label><input id="u-ticket" type="number" min="0" placeholder="2000"></div>
+    <button id="unlock-btn">Email me the report</button>
+    <div id="unlock-error" class="error"></div>
+  </div>
+
+  <div id="step-sent" class="step">
+    <h1 style="font-size:19px;margin-bottom:6px">Sent</h1>
+    <p class="sub">Your report is on its way to <b id="sent-to"></b>. It can take a minute to arrive.</p>
+    <div id="resend-block" style="display:none">
+      <p class="hint">Not there in a minute, or wrong address? Enter it again and we'll resend.</p>
+      <div class="field"><input id="resend-email" type="email" autocomplete="email"></div>
+      <button id="resend-btn" class="secondary">Send again</button>
+      <div id="resend-error" class="error"></div>
+    </div>
   </div>
 
   <div class="privacy">
-    <b>Your data:</b> the pairing is read-only and temporary. The linked device is automatically
-    unlinked and <b>all synced data is permanently deleted after 2 hours</b> (or immediately, below).
-    Nothing is shared, and no messages are ever sent from your account.
+    <b>Your data:</b> this reads your chat history and <b>never sends a message</b>. The device is
+    unlinked and <b>all synced chat history is deleted within 2 hours</b> (or immediately, below).
+    We keep the finished report and the contact details you give us. The report link we email is
+    private — anyone holding it can read the report. More in our
+    <a href="https://heyanaya.ai/privacy.html" style="color:var(--blue)">privacy policy</a>.
     <button id="delete-btn" class="secondary" style="display:none; margin-top:12px;">Unlink &amp; delete my data now</button>
   </div>
 </div>
@@ -121,7 +147,7 @@ $('toggle-code').addEventListener('click', (e) => {
 });
 
 async function createSession(phone) {
-  const res = await fetch('/api/session', {
+  const res = await fetch('api/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(phone ? { phone } : {}),
@@ -169,10 +195,10 @@ $('start-btn').addEventListener('click', async () => {
 async function poll() {
   if (!sid) return;
   try {
-    const res = await fetch('/api/session/' + encodeURIComponent(sid));
+    const res = await fetch('api/session/' + encodeURIComponent(sid));
     if (res.status === 404) {
       clearInterval(pollTimer);
-      $('pair-error').textContent = 'Session expired and its data was deleted. Reload to start over.';
+      $('pair-error').textContent = 'This session ended and its data was deleted — pairing has a time limit. Reload to start over.';
       return;
     }
     const s = await res.json();
@@ -181,7 +207,7 @@ async function poll() {
       $('pairing-code').textContent = c.length === 8 ? c.slice(0, 4) + '-' + c.slice(4) : c;
     }
     if (usingQR && s.hasQR && !s.connected) {
-      $('qr-img').src = '/qr.png?sid=' + encodeURIComponent(sid) + '&t=' + Date.now();
+      $('qr-img').src = 'qr.png?sid=' + encodeURIComponent(sid) + '&t=' + Date.now();
     }
     if (s.connected || (s.stats && s.stats.totalMessages > 0)) {
       show('step-sync');
@@ -190,9 +216,11 @@ async function poll() {
       $('sync-stats').textContent = (st.totalChats || 0) + ' chats · ' + (st.totalMessages || 0) + ' messages';
       const p = s.syncProgress;
       $('sync-fill').style.width = (p == null ? (st.totalMessages ? 15 : 5) : Math.max(5, p)) + '%';
-      if (p >= 100 || (st.totalMessages || 0) > 0) {
-        $('audit-btn').disabled = false;
-      }
+      // Only once the sync has settled: freezing mid-sync emails a partial
+      // report, and the chat history is gone before it could be redone.
+      var settled = s.syncSettled && (st.totalMessages || 0) > 0;
+      $('audit-btn').disabled = !settled;
+      $('audit-btn').textContent = settled ? 'Get my report' : 'Still syncing…';
       if (p >= 100) {
         $('sync-fill').style.width = '100%';
       }
@@ -200,8 +228,60 @@ async function poll() {
   } catch (e) { /* transient */ }
 }
 
-$('audit-btn').addEventListener('click', () => {
-  window.location.href = '/audit.html?sid=' + encodeURIComponent(sid);
+$('audit-btn').addEventListener('click', () => { show('step-unlock'); });
+
+$('unlock-btn').addEventListener('click', async () => {
+  const body = {
+    sid: sid,
+    clinic: $('u-clinic').value,
+    name: $('u-name').value,
+    phone: $('u-phone').value,
+    email: $('u-email').value,
+    avgTicketValue: $('u-ticket').value,
+  };
+  $('unlock-error').textContent = '';
+  $('unlock-btn').disabled = true;
+  $('unlock-btn').textContent = 'Preparing your report…';
+  try {
+    const res = await fetch('api/unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+    $('sent-to').textContent = data.email;
+    $('resend-block').style.display = 'block';
+    $('resend-error').textContent = data.delivered
+      ? ''
+      : "We couldn't deliver it — check the address and try again.";
+    show('step-sent');
+  } catch (e) {
+    $('unlock-error').textContent = e.message;
+  } finally {
+    $('unlock-btn').disabled = false;
+    $('unlock-btn').textContent = 'Email me the report';
+  }
+});
+
+$('resend-btn').addEventListener('click', async () => {
+  $('resend-error').textContent = '';
+  $('resend-btn').disabled = true;
+  try {
+    const res = await fetch('api/unlock/resend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sid: sid, email: $('resend-email').value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+    $('sent-to').textContent = data.email;
+    $('resend-error').textContent = data.delivered ? 'Sent again.' : "Still couldn't deliver it.";
+  } catch (e) {
+    $('resend-error').textContent = e.message;
+  } finally {
+    $('resend-btn').disabled = false;
+  }
 });
 
 $('delete-btn').addEventListener('click', async () => {
@@ -209,7 +289,7 @@ $('delete-btn').addEventListener('click', async () => {
   $('delete-btn').disabled = true;
   $('delete-btn').textContent = 'Unlinking…';
   try {
-    await fetch('/api/session/' + encodeURIComponent(sid), { method: 'DELETE' });
+    await fetch('api/session/' + encodeURIComponent(sid), { method: 'DELETE' });
   } finally {
     clearInterval(pollTimer);
     sid = null;

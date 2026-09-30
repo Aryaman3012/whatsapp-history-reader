@@ -85,9 +85,14 @@ so the rate is a floor, not the clinic's true conversion.
 
 ## Deploy the free tool
 
-Serve mode turns this into a public tool: a visiting clinic scans a QR on `/` (or falls back to a pairing code), syncs, and lands on their audit at `/audit.html?sid=…`.
+Serve mode turns this into a public tool: a visiting clinic scans a QR on `/` (or falls back to a pairing code), syncs, fills in the unlock form, and receives its report **by email**. The report is never shown in the browser at unlock time, and the live `/api/audit` route is not mounted in serve mode — the only way to read a report is the emailed link.
 
-**Single-active-session policy:** the moment a new WhatsApp links, every other session — linked or still pairing — is unlinked and purged. Only one clinic is ever connected at a time; `MAX_SESSIONS` only caps how many visitors can be mid-pairing simultaneously.
+**Sessions run concurrently.** Clinics arriving minutes apart each get their own session, and a new pairing never disturbs one already syncing. `MAX_SESSIONS` is the real cap: past it, new visitors are told the tool is busy rather than anyone being evicted.
+
+On a VPS, `systemd/whatsapp-audit.service` is the unit `deploy.sh` restarts: copy it to
+`/etc/systemd/system/`, put the secrets in `/etc/whatsapp-audit.env` (root-owned, 600), and
+create `/var/lib/whatsapp-audit` owned by the service user. `nginx-whatsapp-audit.conf.example`
+in the clinica-landing repo is the matching proxy config.
 
 ```bash
 docker build -t wa-lead-audit .
@@ -101,8 +106,120 @@ Environment variables (defaults in parentheses):
 - `PORT` (3000)
 - `DATA_DIR` (`./data` / `/data` in Docker) — per-session SQLite + auth dirs live here
 - `SESSION_TTL_MIN` (120) — after this, the session's device is **logged out of WhatsApp and all its data is deleted**
-- `MAX_SESSIONS` (10) — concurrent paired sessions; each one is a linked device connecting from your server's IP, keep this conservative
+- `MAX_SESSIONS` (3) — concurrent sessions; each one is a linked device connecting from your server's IP, so raise it only with evidence
 - `CREATES_PER_IP_PER_HOUR` (3) — session-creation rate limit
+- `PAIRING_DEADLINE_MIN` (10) — an unpaired session loses its slot after this
+- `UNPAIRED_GRACE_MIN` (5) — a paired session may be disconnected this long before it loses its slot
+- `WAHA_URL` / `WAHA_API_KEY` — fallback engine sidecar; unset means no fallback
+- `WAHA_ENGINE` (WEBJS), `WAHA_MAX_CHATS` (500), `WAHA_MAX_MESSAGES` (2000), `WAHA_HISTORY_DAYS` (90)
+- `HANDSHAKE_GRACE_SEC` (20) — how long Baileys gets to produce a QR before the fallback takes over
+- `BASE_PATH` (empty) — mount the whole tool under a path, e.g. `/whatsapp-audit` behind nginx
+- `REPORT_BASE_URL` (`http://localhost:$PORT`) — public origin **plus base path**, e.g. `https://heyanaya.ai/whatsapp-audit`. This is what goes in the emailed report link, so a wrong value emails dead links.
+- `LEADS_ENDPOINT` (`https://leads.cashflohero.ai/v1/leads`) — where unlocks are captured as leads
+
+Mail (the report is delivered by email and nowhere else, so none of this is optional in production):
+
+- `SMTP_HOST` / `SMTP_PORT` (465) / `SMTP_SECURE` (true) — `smtp.gmail.com` for Google Workspace
+- `SMTP_USER` / `SMTP_PASS` — the Workspace account and a **16-character app password**. App passwords require 2-Step Verification on that account. This is a secret: keep it in the service env file, never in the repo.
+- `MAIL_FROM` (`reports@heyanaya.ai`) — must be the Workspace account itself or one of its "send mail as" aliases, or Gmail rewrites the header and DMARC alignment breaks
+- `MAIL_REPLY_TO` — a real inbox, so a clinic replying to its report reaches a person
+- `MAIL_CURRENCY` (`AED`) — currency shown in the email's revenue figure
+
+With no `SMTP_HOST` set the mailer logs each message instead of sending it, which is how the unlock flow is exercisable locally.
+
+## Fallback engine (WAHA)
+
+Baileys announces a hardcoded WhatsApp Web client version during the handshake. When
+WhatsApp retires that version the handshake is refused — status 405, no QR is ever issued,
+and the visitor sits on an empty pairing page until someone upgrades the package. That has
+already happened once here (`badf053`, rc13 → rc14).
+
+So there is a second engine. [WAHA](https://waha.devlike.pro) runs as a Docker sidecar on
+the `WEBJS` engine, which drives a real Chromium against web.whatsapp.com and therefore
+picks up whatever client version the page serves — there is no baked-in version to retire.
+
+```bash
+export WAHA_API_KEY=$(openssl rand -hex 24)
+docker compose -f docker-compose.waha.yml up -d
+```
+
+Then set `WAHA_URL=http://127.0.0.1:3001` and the same `WAHA_API_KEY` in
+`/etc/whatsapp-audit.env`. With `WAHA_URL` unset there is simply no fallback; with it set
+but no key, the service refuses to start, because an unauthenticated WAHA is an open
+WhatsApp gateway on the box.
+
+**How the handover works.** Every session starts on Baileys. If it has produced neither a
+QR nor a pairing code within `HANDSHAKE_GRACE_SEC` (default 20) and has not connected, the
+primary is torn down and a WAHA session takes over; the visitor just sees the QR arrive a
+beat later. Failover happens only before pairing — afterwards the credentials belong to the
+engine that paired, so a switch would mean asking the clinic to scan again. A primary that
+produced a QR, a pairing code, or a connection is never touched.
+
+**What the fallback costs.** WAHA pulls history per chat over REST rather than receiving
+Baileys' bulk `messaging-history.set` dump, so a fallback sync is slower and bounded by
+`WAHA_MAX_CHATS` (500), `WAHA_MAX_MESSAGES` (2000 per chat) and `WAHA_HISTORY_DAYS` (90).
+Chromium also wants memory — the compose file caps the sidecar at 2GB, which is why it
+belongs on a box with room rather than alongside a 1GB-capped service.
+
+One translation detail worth knowing: WAHA's browser engine addresses contacts as `@c.us`,
+while the audit only counts a chat as a lead when its jid ends in `@s.whatsapp.net` or
+`@lid`. The adapter rewrites jids on the way in — without it a WAHA-sourced audit would
+report zero leads while looking like it synced perfectly.
+
+## Keeping it up
+
+`GET /health` (so `https://heyanaya.ai/whatsapp-audit/health` in production) is the
+liveness check. It answers without touching a session or the store:
+
+```json
+{"ok":true,"mode":"serve","uptimeSeconds":8421,"mail":"ok","sessions":{"active":1,"max":3,"paired":1},"degraded":[]}
+```
+
+It returns **503 when SMTP is unusable**, not just when the process is dying. A serve
+process with dead mail still accepts unlocks and still tells each clinic the report was
+sent — that is the outage worth paging on, and a plain "is the port open" check misses it.
+SMTP is re-verified every five minutes, so a password revoked at noon shows up by 12:05
+rather than at the next restart. `mail: "unverified"` is the startup race and stays 200.
+
+It also returns **503 when every slot is held by a session that never paired**
+(`degraded: ["capacity"]`). That is the other outage that looks healthy: the process is up,
+mail works, and every clinic arriving is told the tool is busy.
+
+Point an external uptime check (healthchecks.io, UptimeRobot, whatever you already use) at
+that URL every few minutes and send the alert to the same Slack channel as the leads.
+Without it the failure is silent: the pitch page keeps loading, ads keep spending, and the
+only symptom is that leads stop arriving.
+
+The systemd unit restarts on any exit (`Restart=always`) and has no start limit, so a bad
+`/etc/whatsapp-audit.env` produces a retry loop rather than a unit that gives up and stays
+dead. `MemoryMax=1G` keeps a session leak from taking the whole VPS down with it. Remember
+`systemctl enable whatsapp-audit` — without it none of this survives a reboot.
+
+Baileys sockets reconnect on their own with a 2s→30s backoff, except after a `loggedOut`
+(401), where reconnecting is both futile and a good way to escalate a ban. `connectTimeoutMs`
+is 30s so a connect that will never complete fails into that backoff instead of hanging.
+
+A slot is only worth holding while the session is paired, so the reaper ends a session
+early in three cases besides the TTL: it never paired within `PAIRING_DEADLINE_MIN`
+(default 10) — an abandoned QR screen; it paired and then went quiet for longer than
+`UNPAIRED_GRACE_MIN` (default 5) — a reconnect loop that will not recover; or WhatsApp
+logged it out. Without these, `MAX_SESSIONS` slots fill with sessions that can never
+produce a report.
+
+Sessions are still deliberately short-lived: the 2h TTL unlinks the device and deletes its
+WhatsApp data. "Always up" applies to the service, never to a clinic's connection.
+
+## Reports
+
+A visitor pairs and syncs first; the report is gated behind a short form (clinic, name, mobile, email)
+and **delivered only by email** — it is never shown in the browser at unlock time, and the link is not
+returned by the API.
+
+At unlock the report is computed once for all three ranges and stored in `DATA_DIR/reports.db`, keyed by
+the email address it was sent to. That database is **not** purged with the sessions: the WhatsApp
+connection and the synced chat history are still deleted at the TTL, while the finished report is kept
+and the emailed link keeps working. Each unlock is also posted to `leads-api` as
+`ad_variant: clinica-whatsapp-audit`, with the report link in the lead's notes.
 
 How it stays safe(ish):
 

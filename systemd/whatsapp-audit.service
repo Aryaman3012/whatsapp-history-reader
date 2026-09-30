@@ -1,0 +1,69 @@
+[Unit]
+Description=whatsapp-audit (free WhatsApp lead audit, served under heyanaya.ai/whatsapp-audit)
+After=network.target
+# Never stop trying. The default start limit (5 starts / 10s) would leave the
+# unit dead for good after a transient boot failure — and this service refuses
+# to start on a bad SMTP config, so a typo in the env file would otherwise take
+# the tool down until someone noticed by hand.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=whatsapp-audit
+Group=whatsapp-audit
+WorkingDirectory=/opt/whatsapp-history-reader
+ExecStart=/usr/bin/node /opt/whatsapp-history-reader/dist/index.js serve
+# always, not on-failure: a clean exit that nobody asked for is still an outage.
+Restart=always
+RestartSec=5
+
+# Non-secret runtime config
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=BASE_PATH=/whatsapp-audit
+Environment=DATA_DIR=/var/lib/whatsapp-audit
+Environment=SESSION_TTL_MIN=120
+Environment=MAX_SESSIONS=3
+Environment=CREATES_PER_IP_PER_HOUR=3
+# A slot is only worth holding while the session is paired.
+Environment=PAIRING_DEADLINE_MIN=10
+Environment=UNPAIRED_GRACE_MIN=5
+# Seconds Baileys gets to produce a QR before the fallback engine takes over.
+Environment=HANDSHAKE_GRACE_SEC=20
+
+# Read secrets from /etc/whatsapp-audit.env (root-owned, 600).
+# Required: SMTP_HOST, SMTP_USER, SMTP_PASS (Google Workspace app password —
+#           the account needs 2-Step Verification), MAIL_FROM (that account or
+#           one of its "send mail as" aliases), REPORT_BASE_URL.
+# Optional: MAIL_REPLY_TO, MAIL_CURRENCY, LEADS_ENDPOINT.
+# Fallback engine (see docker-compose.waha.yml): WAHA_URL=http://127.0.0.1:3001
+#           and WAHA_API_KEY. Without WAHA_URL there is no fallback and a
+#           refused Baileys handshake leaves the visitor with no QR.
+# The service refuses to start without SMTP_HOST and REPORT_BASE_URL: the
+# report is delivered by email and nowhere else, so a mailless process would
+# tell every clinic "sent" and deliver nothing.
+EnvironmentFile=/etc/whatsapp-audit.env
+# NOTE: this is deliberately AFTER the Environment= lines above. systemd applies
+# assignments in order, so listing it last is what lets /etc/whatsapp-audit.env
+# override any of those defaults. Move it back above them and the file's values
+# for PORT, MAX_SESSIONS, TTL etc. are silently ignored.
+
+# One runaway session must not OOM the box that also serves the site and
+# leads-api; systemd kills this service instead.
+MemoryMax=1G
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# Sessions are ephemeral, but DATA_DIR also holds reports.db, which is kept.
+ReadWritePaths=/var/lib/whatsapp-audit
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
