@@ -132,10 +132,18 @@ const $ = (id) => document.getElementById(id);
 let sid = null;
 let pollTimer = null;
 let sawSync = false;
+let reportReady = false;
+
+let currentStep = 'step-phone';
+// Once the visitor has reached the form, they own the screen. Sync batches keep
+// arriving for a while and the poll used to call show('step-sync') on every
+// one, throwing them out of a half-filled form.
+const VISITOR_OWNED = ['step-unlock', 'step-sent'];
 
 function show(step) {
   document.querySelectorAll('.step').forEach((el) => el.classList.remove('active'));
   $(step).classList.add('active');
+  currentStep = step;
 }
 
 let usingQR = false;
@@ -210,7 +218,7 @@ async function poll() {
       $('qr-img').src = 'qr.png?sid=' + encodeURIComponent(sid) + '&t=' + Date.now();
     }
     if (s.connected || (s.stats && s.stats.totalMessages > 0)) {
-      show('step-sync');
+      if (!VISITOR_OWNED.includes(currentStep)) show('step-sync');
       sawSync = true;
       const st = s.stats || {};
       $('sync-stats').textContent = (st.totalChats || 0) + ' chats · ' + (st.totalMessages || 0) + ' messages';
@@ -218,9 +226,13 @@ async function poll() {
       $('sync-fill').style.width = (p == null ? (st.totalMessages ? 15 : 5) : Math.max(5, p)) + '%';
       // Only once the sync has settled: freezing mid-sync emails a partial
       // report, and the chat history is gone before it could be redone.
-      var settled = s.syncSettled && (st.totalMessages || 0) > 0;
-      $('audit-btn').disabled = !settled;
-      $('audit-btn').textContent = settled ? 'Get my report' : 'Still syncing…';
+      // Latch: once it has settled once, it stays enabled. A late batch used to
+      // flip syncSettled back to false and disable the button under the cursor.
+      if (s.syncSettled && (st.totalMessages || 0) > 0) reportReady = true;
+      $('audit-btn').disabled = !reportReady;
+      $('audit-btn').textContent = reportReady
+        ? 'Get my report'
+        : 'Reading your chats…';
       if (p >= 100) {
         $('sync-fill').style.width = '100%';
       }
